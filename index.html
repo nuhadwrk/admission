@@ -129,7 +129,17 @@
     body.design .box { resize: both; border: 1px dashed transparent; }
     body.design .box.sel { border-color: #3b82f6; box-shadow: 0 0 0 3px var(--ring); background: rgba(255,255,255,.9); }
     body:not(.design) .box { resize: none; }
-    .box:focus { box-shadow: 0 0 0 3px var(--ring); background: rgba(255,255,255,.85); }
+    .box:focus { box-shadow: 0 0 0 3px var(--ring); background: transparent; }
+
+    #saveBadge { 
+      position: absolute; 
+      top: 0; 
+      right: 10px; 
+      text-xs px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200; 
+      opacity: 0; 
+      transition: opacity 0.3s ease; 
+    }
+    #saveBadge.visible { opacity: 1; }
 
     @media print { 
       body { background: #fff; } 
@@ -185,6 +195,21 @@
       }
       #toggleToolbarBtn { 
         display: block; /* Always show on mobile */
+      }
+      body.design .box { 
+        resize: both; 
+        min-width: 40px; /* Larger touch target for resize */
+        min-height: 30px; 
+      }
+      body.design .box::after { 
+        content: ''; 
+        position: absolute; 
+        bottom: 0; 
+        right: 0; 
+        width: 20px; 
+        height: 20px; 
+        cursor: nwse-resize; 
+        touch-action: none; 
       }
     }
   </style>
@@ -320,9 +345,9 @@
     }
 
     function showSavedBadge() {
-      saveBadge.classList.remove('hidden');
+      saveBadge.classList.add('visible');
       clearTimeout(showSavedBadge._t);
-      showSavedBadge._t = setTimeout(() => saveBadge.classList.add('hidden'), 1200);
+      showSavedBadge._t = setTimeout(() => saveBadge.classList.remove('visible'), 1200);
     }
 
     function getLineHeightRatio(el) {
