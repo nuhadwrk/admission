@@ -1,159 +1,360 @@
-<!-- ========== index.html (Fill-only, mobile-first, exact PDF export/print) ========== -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Admission Form — Fill</title>
+  <title>Admission Form — Fill + Designer</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet"/>
-  <!-- PDF.js to render background pages for on-screen filling -->
+  <!-- PDF.js (screen render) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
   <script>pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
-  <!-- pdf-lib for exact vector export/print (no rounded corners) -->
+  <!-- pdf-lib (exact vector export/print) -->
   <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
   <style>
     :root{ --ring: rgba(59,130,246,.35) }
     html,body{ height:100%; }
     body{ font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial; background:#f8fafc; }
 
-    /* Mobile-first layout */
-    #chrome{ max-width:900px; margin:0 auto; padding:clamp(8px,2vw,20px); }
+    #chrome{ max-width:1100px; margin:0 auto; padding:clamp(8px,2vw,20px); }
 
-    /* Sticky footer toolbar for mobile thumbs */
-    #toolbar{ position:sticky; bottom:0; inset-inline:0; z-index:50; display:flex; gap:.5rem; align-items:center; justify-content:space-between; padding:.5rem; background:rgba(255,255,255,.9); backdrop-filter:saturate(1.2) blur(6px); border:1px solid #e5e7eb; border-radius:14px; box-shadow:0 8px 30px rgba(0,0,0,.08); }
-    .btn{ display:inline-flex; align-items:center; justify-content:center; gap:.5rem; padding:.65rem .9rem; border:1px solid #e5e7eb; border-radius:12px; background:#fff; color:#0f172a; font-weight:600; }
+    #toolbar{ position:sticky; top:0; z-index:50; display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; padding:.5rem; background:rgba(255,255,255,.96); backdrop-filter:blur(6px); border:1px solid #e5e7eb; border-radius:14px; box-shadow:0 8px 30px rgba(0,0,0,.08); }
+    .btn{ display:inline-flex; align-items:center; justify-content:center; gap:.5rem; padding:.6rem .9rem; border:1px solid #e5e7eb; border-radius:12px; background:#fff; color:#0f172a; font-weight:600; }
     .btn-primary{ background:#2563eb; color:#fff; border-color:#1d4ed8; }
 
-    /* Stage scrolls vertically; pages fit width */
     #stage{ max-height:calc(100vh - 170px); overflow:auto; background:#fff; border:1px solid #e5e7eb; border-radius:16px; padding:clamp(6px,1.5vw,16px); }
-    #pages{ display:flex; flex-direction:column; gap:clamp(14px,2vw,26px); align-items:center; }
+    #pages{ display:flex; flex-direction:column; gap:clamp(12px,2vw,24px); align-items:center; }
 
     .page{ position:relative; }
-    .page canvas{ display:block; /* precise edges */ border-radius:0; box-shadow:0 6px 18px rgba(0,0,0,.06); }
+    .page canvas{ display:block; border-radius:0; box-shadow:0 6px 18px rgba(0,0,0,.06); }
 
-    /* Fill-only text boxes (no drag/resize) */
-    .box{ position:absolute; background:transparent; color:#0f172a; min-width:40px; min-height:22px; border-radius:6px; padding:4px 6px; line-height:1.2; outline:none; resize:none; overflow:hidden; white-space:pre-wrap; -webkit-user-select:text; user-select:text; }
+    .box{ position:absolute; background:transparent; color:#0f172a; min-width:40px; min-height:22px; border-radius:6px; padding:4px 6px; line-height:1.2; outline:none; overflow:hidden; white-space:pre-wrap; -webkit-user-select:text; user-select:text; }
+    /* Show resize handles only in design mode */
+    body.design .box{ resize:both; border:1px dashed transparent; }
+    body.design .box.sel{ border-color:#3b82f6; box-shadow:0 0 0 4px var(--ring); background:rgba(255,255,255,.9) }
+    body:not(.design) .box{ resize:none; }
     .box:focus{ box-shadow:0 0 0 4px var(--ring); background:rgba(255,255,255,.85); }
 
-    /* Print via generated PDF: hide on-screen UI */
-    @media print{ body{ background:#fff } #chrome>*:not(#stage){ display:none!important } #stage{ border:0; padding:0 } }
+    @media print{ body{ background:#fff } #chrome>*:not(#stage){ display:none!important } #stage{ border:0; padding:0 } .page canvas{ box-shadow:none } }
   </style>
 </head>
-<body>
+<body class="fill min-h-screen">
   <div id="chrome" class="space-y-3">
     <header class="text-center">
       <h1 class="text-2xl font-extrabold tracking-tight text-slate-900">Admission Form</h1>
-      <p class="text-slate-600 text-sm">Fill on mobile · exact PDF export/print</p>
+      <p class="text-slate-600 text-sm">Mobile‑first. Live designer built in. Crisp on phones.</p>
     </header>
 
-    <div id="stage">
-      <div id="pages"></div>
-      <div id="overlay" class="flex items-center justify-center py-16 text-slate-600">Loading…</div>
-    </div>
-
     <div id="toolbar">
-      <button id="clearBtn" class="btn" title="Clear all text">Clear</button>
-      <div class="grow"></div>
-      <button id="saveBtn" class="btn" title="Save filled text to this device">Save</button>
+      <!-- Source selection (keep for now; can remove later) -->
+      <label class="btn" title="Load local PDF">
+        <input id="fileInput" type="file" accept="application/pdf" class="hidden" />
+        Load PDF
+      </label>
+      <div class="flex items-center gap-2 border border-slate-200 rounded-xl bg-white px-2 py-1 text-sm">
+        <span class="text-slate-600">or URL</span>
+        <input id="urlInput" type="text" class="w-60 outline-none" placeholder="./Admission.pdf" />
+        <button id="useUrlBtn" class="btn">Use</button>
+      </div>
+
+      <div class="w-px h-6 bg-slate-200 mx-1"></div>
+
+      <!-- Modes -->
+      <div class="flex items-center gap-2 border border-slate-200 rounded-xl bg-white px-2 py-1 text-sm">
+        <span class="text-slate-600">Mode</span>
+        <select id="modeSel" class="outline-none bg-transparent">
+          <option value="fill" selected>Fill</option>
+          <option value="design">Design</option>
+        </select>
+      </div>
+
+      <button id="addFieldBtn" class="btn" title="Add field; then tap page to place">+ Field</button>
+      <button id="delFieldBtn" class="btn" title="Delete selected">Delete</button>
+      <button id="dupFieldBtn" class="btn" title="Duplicate selected">Duplicate</button>
+
+      <div class="flex items-center gap-2 border border-slate-200 rounded-xl bg-white px-2 py-1 text-sm">
+        <span class="text-slate-600">Font px</span>
+        <select id="fontSizeSel" class="outline-none bg-transparent">
+          <option>10</option><option>12</option><option>14</option>
+          <option selected>16</option><option>18</option><option>20</option><option>24</option>
+        </select>
+      </div>
+      <div class="flex items-center gap-2 border border-slate-200 rounded-xl bg-white px-2 py-1 text-sm">
+        <span class="text-slate-600">Line</span>
+        <select id="lineHeightSel" class="outline-none bg-transparent">
+          <option>1.0</option><option>1.1</option><option selected>1.2</option>
+          <option>1.3</option><option>1.4</option><option>1.5</option><option>1.6</option><option>1.8</option><option>2.0</option>
+        </select>
+      </div>
+      <div class="flex items-center gap-2 border border-slate-200 rounded-xl bg-white px-2 py-1 text-sm">
+        <span class="text-slate-600">Name</span>
+        <input id="fieldName" class="w-40 outline-none" placeholder="patient_name" />
+        <button id="applyNameBtn" class="btn">Apply</button>
+      </div>
+
+      <div class="w-px h-6 bg-slate-200 mx-1"></div>
+
+      <button id="saveAnchorsBtn" class="btn" title="Save anchors (browser)">Save</button>
+      <button id="loadAnchorsBtn" class="btn" title="Load anchors (browser)">Load</button>
+      <button id="exportAnchorsBtn" class="btn btn-primary" title="Download anchors JSON">Export JSON</button>
+      <label class="btn" title="Import anchors JSON">
+        <input id="importAnchorsInput" type="file" accept="application/json" class="hidden" />
+        Import JSON
+      </label>
+
+      <div class="w-px h-6 bg-slate-200 mx-1"></div>
+
       <button id="printBtn" class="btn" title="Print">Print</button>
       <button id="exportBtn" class="btn btn-primary" title="Export filled PDF">Export PDF</button>
+
+      <span id="saveBadge" class="ml-auto text-xs px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 hidden">Saved</span>
     </div>
 
-    <p id="saveBadge" class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-full w-fit hidden">Saved</p>
+    <div id="stage" class="relative rounded-2xl border border-slate-200 bg-white">
+      <div id="pages"></div>
+      <div id="overlay" class="absolute inset-0 flex items-center justify-center text-slate-600 bg-white/70 rounded-2xl">Loading…</div>
+    </div>
   </div>
 
   <script>
-    // ====== CONFIG (edit these for your repo) ======
-    const PDF_URL       = './Admission.pdf';           // put your PDF here
-    const ANCHORS_URL   = './anchors.json';            // exported from designer
-    const STORAGE_KEY   = 'admission:values';                 // localStorage key
+    // ====== CONFIG (root files by default) ======
+    const DEFAULT_PDF_URL = './Admission.pdf';  // change if needed
 
     // ====== Elements ======
-    const pagesRoot = document.getElementById('pages');
-    const overlay   = document.getElementById('overlay');
-    const saveBadge = document.getElementById('saveBadge');
-    const saveBtn   = document.getElementById('saveBtn');
-    const clearBtn  = document.getElementById('clearBtn');
-    const exportBtn = document.getElementById('exportBtn');
+    const fileInput = document.getElementById('fileInput');
+    const urlInput  = document.getElementById('urlInput');
+    const useUrlBtn = document.getElementById('useUrlBtn');
+
+    const modeSel = document.getElementById('modeSel');
+
+    const addFieldBtn = document.getElementById('addFieldBtn');
+    const delFieldBtn = document.getElementById('delFieldBtn');
+    const dupFieldBtn = document.getElementById('dupFieldBtn');
+
+    const fontSizeSel = document.getElementById('fontSizeSel');
+    const lineHeightSel = document.getElementById('lineHeightSel');
+    const fieldNameInput = document.getElementById('fieldName');
+    const applyNameBtn = document.getElementById('applyNameBtn');
+
+    const saveAnchorsBtn = document.getElementById('saveAnchorsBtn');
+    const loadAnchorsBtn = document.getElementById('loadAnchorsBtn');
+    const exportAnchorsBtn = document.getElementById('exportAnchorsBtn');
+    const importAnchorsInput = document.getElementById('importAnchorsInput');
+
     const printBtn  = document.getElementById('printBtn');
+    const exportBtn = document.getElementById('exportBtn');
+
+    const stage = document.getElementById('stage');
+    const pagesRoot = document.getElementById('pages');
+    const overlay = document.getElementById('overlay');
+    const saveBadge = document.getElementById('saveBadge');
 
     // ====== State ======
-    let anchorsByPage = {}; // {1:[{name,x,y,w,h,fs,lh}]}
-    let values = {};        // {name: text}
-    let pdfDoc = null;      // pdf.js doc for screen render
+    let pdfDoc = null; let fileKey = null; let adding=false; let selected=null;
+    // anchorsByPage: {1:[{name,x,y,w,h,lh, fpt (points), fs (px, optional legacy)}], ...}
+    let anchorsByPage = {}; 
+    let values = {}; // field -> text
+    let currentScale = 1; // CSS px per PDF pt
+    let currentDPR = Math.min(window.devicePixelRatio||1, 2);
 
     // ====== Helpers ======
-    function showSaved(){ saveBadge.classList.remove('hidden'); clearTimeout(showSaved._t); showSaved._t=setTimeout(()=>saveBadge.classList.add('hidden'), 1200); }
-    function toScreen(a, cw, ch){ return { left:a.x*cw, top:a.y*ch, width:a.w*cw, height:a.h*ch } }
+    function setEnabled(enabled){
+      [addFieldBtn,delFieldBtn,dupFieldBtn,saveAnchorsBtn,loadAnchorsBtn,exportAnchorsBtn,printBtn,exportBtn,applyNameBtn].forEach(b=>b.disabled=!enabled);
+      const design = modeSel.value==='design';
+      document.body.classList.toggle('design', design);
+      fontSizeSel.disabled = !design; lineHeightSel.disabled = !design;
+      refreshBoxesInteractivity();
+    }
 
-    function loadValues(){ try{ values = JSON.parse(localStorage.getItem(STORAGE_KEY)||'{}') }catch{ values={} } }
-    function saveValues(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(values)); showSaved(); }
-    function clearValues(){ values={}; document.querySelectorAll('.box').forEach(b=>b.textContent=''); saveValues(); }
+    function storageKey(){ return 'anchors:'+ (fileKey||'local'); }
 
-    // ====== PDF.js render for on-screen filling ======
+    function download(filename, data, type='application/json'){
+      const blob = new Blob([data], {type});
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+      setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+    }
+
+    function showSavedBadge(){ saveBadge.classList.remove('hidden'); clearTimeout(showSavedBadge._t); showSavedBadge._t=setTimeout(()=>saveBadge.classList.add('hidden'), 1200); }
+
+    function getLineHeightRatio(el){
+      const inline = parseFloat(el.style.lineHeight);
+      if(!isNaN(inline) && inline > 0) return inline;
+      const cs = getComputedStyle(el);
+      const lhPx = parseFloat(cs.lineHeight);
+      const fsPx = parseFloat(cs.fontSize) || 16;
+      if(!isNaN(lhPx) && !isNaN(fsPx) && fsPx>0) return lhPx / fsPx;
+      return 1.2;
+    }
+
+    function refreshBoxesInteractivity(){
+      document.querySelectorAll('.box').forEach(tb=>{
+        tb.style.resize = (modeSel.value==='design') ? 'both' : 'none';
+      });
+    }
+
+    // ====== Scale + Render (HiDPI crisp + identical math on designer/live) ======
     async function renderAllPages(){
       pagesRoot.innerHTML='';
-      const viewport1 = (await pdfDoc.getPage(1)).getViewport({ scale:1 });
-      const stageW = Math.max(document.getElementById('stage').clientWidth - 8, 320);
-      const scale = stageW / viewport1.width; // fit width
+
+      const cs   = getComputedStyle(stage);
+      const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+      const stageWExact = Math.max(stage.clientWidth - padX, 320);
+
+      const page1 = await pdfDoc.getPage(1);
+      const v1    = page1.getViewport({ scale: 1 });
+      currentScale = stageWExact / v1.width;             // CSS px per PDF pt
+      currentDPR   = Math.min(window.devicePixelRatio||1, 2); // cap for perf
 
       for(let p=1; p<=pdfDoc.numPages; p++){
-        const page = await pdfDoc.getPage(p);
-        const vp = page.getViewport({ scale });
-        const pageWrap = document.createElement('div'); pageWrap.className='page'; pageWrap.dataset.page=String(p);
-        pageWrap.style.width = vp.width+'px'; pageWrap.style.height = vp.height+'px';
+        const page   = await pdfDoc.getPage(p);
+        const vpCSS  = page.getViewport({ scale: currentScale });          // CSS size
+        const vpHiDPI= page.getViewport({ scale: currentScale*currentDPR });// buffer size
 
-        const canvas = document.createElement('canvas'); canvas.width=vp.width; canvas.height=vp.height;
+        const pageWrap = document.createElement('div');
+        pageWrap.className='page'; pageWrap.dataset.page=String(p);
+        pageWrap.style.width  = vpCSS.width+'px';
+        pageWrap.style.height = vpCSS.height+'px';
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width  = Math.round(vpHiDPI.width);
+        canvas.height = Math.round(vpHiDPI.height);
+        canvas.style.width  = vpCSS.width+'px';
+        canvas.style.height = vpCSS.height+'px';
+
         pageWrap.appendChild(canvas); pagesRoot.appendChild(pageWrap);
-        await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+        await page.render({ canvasContext: ctx, viewport: vpHiDPI }).promise;
 
-        (anchorsByPage[p]||[]).forEach(a=> spawnBox(p,a));
+        (anchorsByPage[p]||[]).forEach(a=> spawnBox(p, a));
       }
-      overlay.remove();
+      overlay?.remove?.();
+      refreshBoxesInteractivity();
     }
+
+    function toScreen(a, cw, ch){ return { left:a.x*cw, top:a.y*ch, width:a.w*cw, height:a.h*ch } }
 
     function spawnBox(pageNo, a){
       const pageWrap = [...pagesRoot.children].find(el=>el.dataset.page==String(pageNo)); if(!pageWrap) return;
-      const tb = document.createElement('div'); tb.className='box'; tb.contentEditable=true; tb.dataset.name=a.name||''; tb.style.fontSize=(a.fs||16)+'px'; tb.style.lineHeight=(a.lh||1.2);
+      const tb = document.createElement('div');
+      tb.className='box'; tb.contentEditable=true; tb.dataset.page=String(pageNo);
+      tb.dataset.name=a.name||'';
+
+      // Use PDF point size converted to CSS px for consistent look across devices
+      const cssFs = (a.fpt ? a.fpt*currentScale : (a.fs||16));
+      tb.style.fontSize = cssFs + 'px';
+      tb.style.lineHeight = (a.lh || 1.2);
+
       const s = toScreen(a, pageWrap.clientWidth, pageWrap.clientHeight);
       tb.style.left=s.left+'px'; tb.style.top=s.top+'px'; tb.style.width=s.width+'px'; tb.style.height=s.height+'px';
       tb.textContent = values[a.name||''] || '';
-      tb.addEventListener('input', ()=>{ const k=tb.dataset.name; if(k) values[k]=tb.textContent; autoSave(); });
-      pageWrap.appendChild(tb);
+
+      tb.addEventListener('input', ()=>{ const k=tb.dataset.name; if(k) values[k]=tb.textContent; autoSaveValues(); });
+
+      tb.addEventListener('pointerdown', (e)=>{
+        if(modeSel.value!=='design') return;
+        tb.classList.add('sel'); selected=tb; tb.setPointerCapture(e.pointerId);
+        tb._drag=true; tb._sx=e.clientX; tb._sy=e.clientY; tb._sl=parseFloat(tb.style.left)||0; tb._st=parseFloat(tb.style.top)||0;
+        fieldNameInput.value = tb.dataset.name||''; 
+        fontSizeSel.value = String(Math.round(parseFloat(tb.style.fontSize)||16));
+        lineHeightSel.value = (Math.round(getLineHeightRatio(tb)*10)/10).toFixed(1);
+      });
+      tb.addEventListener('pointermove', (e)=>{
+        if(modeSel.value!=='design') return; if(!tb._drag) return;
+        const dx=e.clientX-tb._sx, dy=e.clientY-tb._sy; tb.style.left=(tb._sl+dx)+'px'; tb.style.top=(tb._st+dy)+'px';
+      });
+      tb.addEventListener('pointerup', ()=>{ tb._drag=false; autoSaveAnchors(); });
+      tb.addEventListener('click', (e)=> e.stopPropagation());
+      tb.addEventListener('blur', ()=>{ const k=tb.dataset.name; if(k) values[k]=tb.textContent; autoSaveValues(); });
+
+      pageWrap.appendChild(tb); return tb;
     }
 
-    function autoSave(){ clearTimeout(autoSave._t); autoSave._t=setTimeout(saveValues, 400); }
+    function getAnchorsFromDom(){
+      const out={};
+      [...pagesRoot.children].forEach(pageWrap=>{
+        const p = parseInt(pageWrap.dataset.page);
+        const cw = pageWrap.clientWidth, ch = pageWrap.clientHeight;
+        const list = [...pageWrap.querySelectorAll('.box')].map(tb=>{
+          const fsCss = parseFloat(tb.style.fontSize)||16;
+          const fpt = fsCss / currentScale; // convert CSS px -> PDF points
+          return {
+            name: tb.dataset.name||'',
+            x: (parseFloat(tb.style.left)||0)/cw,
+            y: (parseFloat(tb.style.top)||0)/ch,
+            w: (tb.offsetWidth)/cw,
+            h: (tb.offsetHeight)/ch,
+            lh: getLineHeightRatio(tb),
+            fpt,              // authoritative font size in points
+            fs: fsCss         // legacy/display
+          };
+        });
+        out[p]=list;
+      });
+      return out;
+    }
 
-    // ====== Exact PDF export using pdf-lib ======
+    function selectBox(tb){ document.querySelectorAll('.box').forEach(b=>b.classList.remove('sel')); selected=tb; if(tb) tb.classList.add('sel'); }
+
+    function deleteSelected(){ if(!selected) return; selected.remove(); selected=null; autoSaveAnchors(); }
+
+    function duplicateSelected(){ if(!selected) return; const pageWrap = selected.closest('.page'); const p = parseInt(pageWrap.dataset.page); const cw=pageWrap.clientWidth, ch=pageWrap.clientHeight; const fsCss = parseFloat(selected.style.fontSize)||16; const a = { name:(selected.dataset.name||'')+'_copy', x:(parseFloat(selected.style.left)||0)/cw + 0.02, y:(parseFloat(selected.style.top)||0)/ch + 0.02, w:(selected.offsetWidth)/cw, h:(selected.offsetHeight)/ch, lh:getLineHeightRatio(selected), fpt: fsCss/currentScale, fs: fsCss }; a.x=Math.min(a.x,0.95); a.y=Math.min(a.y,0.95); anchorsByPage[p]=anchorsByPage[p]||[]; anchorsByPage[p].push(a); spawnBox(p,a); autoSaveAnchors(); }
+
+    function applyName(){ if(!selected) return; const name = fieldNameInput.value.trim(); selected.dataset.name = name; if(name && !values[name]) values[name]=''; autoSaveAnchors(); }
+    function applyFontSize(){ if(!selected) return; selected.style.fontSize = fontSizeSel.value+'px'; autoSaveAnchors(); }
+    function applyLineHeight(){ if(!selected) return; selected.style.lineHeight = lineHeightSel.value; autoSaveAnchors(); }
+
+    // ===== Local persistence =====
+    function saveAnchors(){ anchorsByPage = getAnchorsFromDom(); const payload = { anchorsByPage, version:4 }; localStorage.setItem(storageKey(), JSON.stringify(payload)); showSavedBadge(); }
+    function loadAnchors(){ const raw = localStorage.getItem(storageKey()); if(!raw) return alert('No saved anchors for this file.'); try{ const p = JSON.parse(raw); anchorsByPage = p.anchorsByPage||{}; renderAllPages(); showSavedBadge(); }catch(e){ alert('Failed to parse anchors JSON.'); } }
+    function exportAnchors(){ const data = JSON.stringify({ anchorsByPage, version:4 }, null, 2); const base = (fileKey||'anchors'); download(base+'-anchors.json', data); }
+    function autoSaveAnchors(){ clearTimeout(autoSaveAnchors._t); autoSaveAnchors._t = setTimeout(saveAnchors, 350); }
+
+    function autoSaveValues(){ clearTimeout(autoSaveValues._t); autoSaveValues._t = setTimeout(()=>{ localStorage.setItem('values:'+ (fileKey||'local'), JSON.stringify(values)); showSavedBadge(); }, 400); }
+
+    importAnchorsInput.addEventListener('change', async (e)=>{ const f = e.target.files?.[0]; if(!f) return; const text = await f.text(); try{ const p = JSON.parse(text); anchorsByPage = p.anchorsByPage||p; await renderAllPages(); showSavedBadge(); }catch(err){ alert('Invalid JSON'); } });
+
+    // ===== Exact PDF export (vector, matches original) =====
+    function wrapTextBlocks(text){ return text.replace(/\r/g,'').split('\n'); }
+    function wrapLineToWidth(text, font, size, maxWidth){
+      const words = text.split(/\s+/);
+      const lines=[]; let line='';
+      const W = t=>font.widthOfTextAtSize(t, size);
+      for(const w of words){
+        const t = line? line+' '+w : w;
+        if(W(t) <= maxWidth){ line=t; } else { if(line) lines.push(line); line=w; }
+      }
+      if(line) lines.push(line);
+      return lines;
+    }
+
     async function buildPdfBlob(){
-      // Load original PDF and anchors
-      const [pdfBytes] = await Promise.all([
-        fetch(PDF_URL).then(r=>r.arrayBuffer())
-      ]);
+      const pdfBytes = await fetch(fileKey || DEFAULT_PDF_URL).then(r=>r.arrayBuffer());
       const pdf = await PDFLib.PDFDocument.load(pdfBytes);
       const font = await pdf.embedFont(PDFLib.StandardFonts.Helvetica);
 
       for(let p=1; p<=pdf.getPageCount(); p++){
         const page = pdf.getPages()[p-1];
-        const { width, height } = page.getSize();
+        const { width, height } = page.getSize(); // points
         const list = anchorsByPage[p]||[];
         list.forEach(a=>{
-          const name = a.name||''; if(!name) return; const text = (values[name]||'').toString();
-          if(!text) return;
-          const fs = a.fs||16; const lh = a.lh||1.2; const pad = 2; // small padding inside box
+          const name = a.name||''; const text = (values[name]||'').toString(); if(!text) return;
+          const fsPt = a.fpt ? a.fpt : ((a.fs||16) / currentScale); // fallback if older JSON
+          const lh   = a.lh || 1.2; const pad = 2;
           const boxW = a.w*width - pad*2; const boxH = a.h*height - pad*2;
-          const startX = a.x*width + pad; // left
-          const topY = height - (a.y*height) - pad; // top
+          const startX = a.x*width + pad; const topY = height - (a.y*height) - pad;
 
-          const lines = wrapText(text, font, fs, boxW);
-          let y = topY - fs; // first baseline
-          for(let i=0;i<lines.length;i++){
-            if( (topY - (y)) > boxH + fs*0.2 ) break; // stop if exceeds box
-            page.drawText(lines[i], { x:startX, y, size:fs, font, color: PDFLib.rgb(0,0,0) });
-            y -= fs*lh;
+          const blocks = wrapTextBlocks(text);
+          let y = topY - fsPt; // first baseline
+          outer: for(const b of blocks){
+            const lines = wrapLineToWidth(b, font, fsPt, boxW);
+            for(const ln of lines){
+              if( (topY - y) > boxH + fsPt*0.2 ) break outer; // stop if exceeds box
+              page.drawText(ln, { x:startX, y, size:fsPt, font, color: PDFLib.rgb(0,0,0) });
+              y -= fsPt*lh;
+            }
+            y -= fsPt*(lh-1); // extra gap for explicit newline
           }
         });
       }
@@ -161,69 +362,61 @@
       return new Blob([outBytes], { type:'application/pdf' });
     }
 
-    function wrapText(text, font, fontSize, maxWidth){
-      // Split by explicit newlines first
-      const blocks = text.replace(/\r/g,'').split('\n');
-      const lines = [];
-      const widthOf = t => font.widthOfTextAtSize(t, fontSize);
-      for(const block of blocks){
-        const words = block.split(/\s+/);
-        let line = '';
-        for(const w of words){
-          const test = line? line + ' ' + w : w;
-          if(widthOf(test) <= maxWidth) line = test; else { if(line) lines.push(line); line = w; }
-        }
-        lines.push(line);
-      }
-      return lines;
-    }
+    async function doExport(){ const blob = await buildPdfBlob(); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=(fileKey||'admission')+'-filled.pdf'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 5000); }
 
-    async function doExport(){ const blob = await buildPdfBlob(); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='admission-filled.pdf'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 5000); }
+    async function doPrint(){ const blob = await buildPdfBlob(); const url = URL.createObjectURL(blob); const iframe = document.createElement('iframe'); iframe.style.position='fixed'; iframe.style.right='0'; iframe.style.bottom='0'; iframe.style.width='0'; iframe.style.height='0'; iframe.style.border='0'; document.body.appendChild(iframe); iframe.onload=()=>{ setTimeout(()=>{ try{ iframe.contentWindow.focus(); iframe.contentWindow.print(); }catch{} }, 300)}; iframe.src=url; setTimeout(()=>URL.revokeObjectURL(url), 15000); }
 
-    async function doPrint(){
-      const blob = await buildPdfBlob();
-      const url = URL.createObjectURL(blob);
-      const iframe = document.createElement('iframe');
-      iframe.style.position='fixed'; iframe.style.right='0'; iframe.style.bottom='0'; iframe.style.width='0'; iframe.style.height='0'; iframe.style.border='0';
-      document.body.appendChild(iframe);
-      iframe.onload = ()=>{ setTimeout(()=>{ try{ iframe.contentWindow.focus(); iframe.contentWindow.print(); }catch{} }, 300) };
-      iframe.src = url;
-      setTimeout(()=>URL.revokeObjectURL(url), 15000);
-    }
+    // ===== Events =====
+    pagesRoot.addEventListener('click', (e)=>{ const tb = e.target.closest('.box'); selectBox(tb||null); });
+    addFieldBtn.addEventListener('click', ()=>{ if(!pdfDoc) return; if(modeSel.value!=='design') return; adding=true; document.body.style.cursor='crosshair'; });
+    delFieldBtn.addEventListener('click', deleteSelected);
+    dupFieldBtn.addEventListener('click', duplicateSelected);
+    applyNameBtn.addEventListener('click', applyName);
+    fontSizeSel.addEventListener('change', applyFontSize);
+    lineHeightSel.addEventListener('change', applyLineHeight);
 
-    // ====== Boot ======
-    (async function init(){
-      loadValues();
-      // Load anchors JSON first
-      anchorsByPage = await fetch(ANCHORS_URL).then(r=>r.json()).then(p=>p.anchorsByPage||p);
-      // Load PDF for screen rendering
-      pdfDoc = await pdfjsLib.getDocument(PDF_URL).promise; await renderAllPages();
-    })();
+    saveAnchorsBtn.addEventListener('click', saveAnchors);
+    loadAnchorsBtn.addEventListener('click', loadAnchors);
+    exportAnchorsBtn.addEventListener('click', exportAnchors);
 
-    // ====== Events ======
-    saveBtn.addEventListener('click', saveValues);
-    clearBtn.addEventListener('click', clearValues);
-    exportBtn.addEventListener('click', doExport);
     printBtn.addEventListener('click', doPrint);
+    exportBtn.addEventListener('click', doExport);
+
+    fileInput.addEventListener('change', async (e)=>{ const f = e.target.files?.[0]; if(!f) return; if(f.type!=='application/pdf'){ alert('Choose a PDF'); return; } if(window._url) URL.revokeObjectURL(window._url); window._url = URL.createObjectURL(f); fileKey = f.name; anchorsByPage={}; values={}; await loadPdf(window._url); setEnabled(true); });
+    useUrlBtn.addEventListener('click', async ()=>{ const url=(urlInput.value||'').trim(); if(!url){ alert('Enter a PDF URL'); return; } fileKey=url.split('/').pop()||'remote'; anchorsByPage={}; values={}; await loadPdf(url); setEnabled(true); });
+
+    modeSel.addEventListener('change', ()=>{ document.body.classList.toggle('design', modeSel.value==='design'); refreshBoxesInteractivity(); });
+
+    // Normalize add-on-click to wrapper size (not canvas buffer)
+    pagesRoot.addEventListener('click', (e)=>{
+      if(!adding || modeSel.value!=='design') return;
+      const pageWrap = e.target.closest('.page'); if(!pageWrap) return;
+      const r = pageWrap.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width;
+      const y = (e.clientY - r.top)  / r.height;
+      const a = { name:'', x: Math.max(0, Math.min(1, x-0.15)), y: Math.max(0, Math.min(1, y-0.03)), w:0.3, h:0.06, lh: parseFloat(lineHeightSel.value)||1.2, fpt: (parseFloat(fontSizeSel.value)||16)/currentScale, fs: parseFloat(fontSizeSel.value)||16 };
+      const p = parseInt(pageWrap.dataset.page);
+      anchorsByPage[p] = anchorsByPage[p]||[]; anchorsByPage[p].push(a);
+      spawnBox(p, a); adding=false; document.body.style.cursor='default'; autoSaveAnchors();
+    });
+
+    // ===== Load PDF & optional anchors.json on boot =====
+    let _resizeTO=null; window.addEventListener('resize', ()=>{ if(!pdfDoc) return; clearTimeout(_resizeTO); _resizeTO=setTimeout(async()=>{ await renderAllPages(); }, 120); });
+
+    async function loadPdf(url){
+      try{ overlay.classList.remove('hidden'); setEnabled(false); pdfDoc = await pdfjsLib.getDocument(url).promise; await renderAllPages(); setEnabled(true); }
+      catch(e){ console.error(e); alert('Failed to load PDF.'); setEnabled(false); }
+      finally{ overlay.classList.add('hidden'); }
+    }
+
+    (async function init(){
+      document.getElementById('urlInput').value = DEFAULT_PDF_URL;
+      fileKey = DEFAULT_PDF_URL.split('/').pop()||'remote';
+      // Try to fetch anchors.json from root; ignore if missing
+      try{ const p = await fetch('./anchors.json', {cache:'no-store'}); if(p.ok){ const j = await p.json(); anchorsByPage = j.anchorsByPage || j; } }catch{}
+      await loadPdf(DEFAULT_PDF_URL);
+      setEnabled(true);
+    })();
   </script>
 </body>
 </html>
-
-
-<!-- ========== anchors.json (example structure to commit in /assets) ==========
-{
-  "anchorsByPage": {
-    "1": [
-      {"name":"patient_name","x":0.12,"y":0.18,"w":0.50,"h":0.05,"fs":16,"lh":1.2},
-      {"name":"age","x":0.70,"y":0.18,"w":0.18,"h":0.05,"fs":16,"lh":1.2}
-    ],
-    "2": []
-  }
-}
--->
-
-
-<!-- ========== designer.html (Optional — keep this privately to create anchors) ========== -->
-<!-- Use your previously provided designer (with Design/Fill, Load PDF, Export/Import Anchors). 
-     Steps: open designer.html locally, load your PDF, place fields, Export JSON, 
-     commit that JSON as /assets/anchors.json in the repo used by index.html above. -->
