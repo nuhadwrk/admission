@@ -36,10 +36,8 @@
       transition: transform 0.3s ease; 
     }
     #toolbar.hidden { transform: translateY(-100%); }
-    #toolbar.hidden + #toggleToolbarBtn { display: block; }
 
     #toggleToolbarBtn { 
-      display: none; 
       position: sticky; 
       top: 0; 
       z-index: 51; 
@@ -52,6 +50,7 @@
       font-size: .9rem; 
       font-weight: 600; 
       cursor: pointer; 
+      touch-action: manipulation; 
     }
 
     .btn { 
@@ -67,8 +66,30 @@
       font-weight: 600; 
       font-size: .85rem; 
       touch-action: manipulation; 
+      pointer-events: auto; 
     }
     .btn-primary { background: #2563eb; color: #fff; border-color: #1d4ed8; }
+
+    .select-container {
+      display: flex;
+      align-items: center; 
+      gap: .3rem; 
+      border: 1px solid #e5e7eb; 
+      border-radius: 8px; 
+      background: #fff; 
+      padding: .3rem .6rem; 
+      font-size: .85rem; 
+      min-height: 30px; /* Larger tap area */
+    }
+    select { 
+      outline: none; 
+      background: transparent; 
+      font-size: .85rem; 
+      padding: .2rem; 
+      touch-action: manipulation; 
+      pointer-events: auto; 
+      min-width: 50px; /* Easier to tap */
+    }
 
     #stage { 
       background: #fff; 
@@ -103,6 +124,7 @@
       -webkit-user-select: text; 
       user-select: text; 
       font-size: clamp(10px, 2.5vw, 12px); 
+      touch-action: manipulation; 
     }
     body.design .box { resize: both; border: 1px dashed transparent; }
     body.design .box.sel { border-color: #3b82f6; box-shadow: 0 0 0 3px var(--ring); background: rgba(255,255,255,.9); }
@@ -128,14 +150,24 @@
         padding: .3rem .5rem; 
         font-size: .8rem; 
       }
-      /* Hide non-essential controls by default on mobile */
-      #delFieldBtn, #dupFieldBtn, #lineHeightSel, #fieldName, #applyNameBtn, 
+      .select-container {
+        padding: .2rem .5rem; 
+        font-size: .8rem; 
+        min-height: 35px; /* Larger for touch */
+      }
+      select { 
+        font-size: .8rem; 
+        padding: .15rem; 
+        min-width: 60px; 
+      }
+      /* Hide non-essential controls by default, show in expanded mode */
+      #delFieldBtn, #dupFieldBtn, #fieldName, #applyNameBtn, 
       #saveAnchorsBtn, #loadAnchorsBtn, #importAnchorsInput, #exportAnchorsBtn { 
         display: none; 
       }
       #toolbar.expanded #delFieldBtn, #toolbar.expanded #dupFieldBtn, 
-      #toolbar.expanded #lineHeightSel, #toolbar.expanded #fieldName, 
-      #toolbar.expanded #applyNameBtn, #toolbar.expanded #exportAnchorsBtn { 
+      #toolbar.expanded #fieldName, #toolbar.expanded #applyNameBtn, 
+      #toolbar.expanded #exportAnchorsBtn { 
         display: flex; 
       }
       #fieldName { width: 6rem; }
@@ -148,8 +180,11 @@
       .box { 
         min-width: 20px; 
         min-height: 14px; 
-        padding: 1px 3px; 
+        padding: 2px 3px; 
         font-size: clamp(8px, 2vw, 10px); 
+      }
+      #toggleToolbarBtn { 
+        display: block; /* Always show on mobile */
       }
     }
   </style>
@@ -162,7 +197,7 @@
     </header>
 
     <div id="toolbar">
-      <div class="flex items-center gap-1 border border-slate-200 rounded-lg bg-white px-1.5 py-0.5 text-xs">
+      <div class="select-container">
         <span class="text-slate-600">Mode</span>
         <select id="modeSel" class="outline-none bg-transparent">
           <option value="fill" selected>Fill</option>
@@ -174,14 +209,14 @@
       <button id="delFieldBtn" class="btn" title="Delete selected">Delete</button>
       <button id="dupFieldBtn" class="btn" title="Duplicate selected">Duplicate</button>
 
-      <div class="flex items-center gap-1 border border-slate-200 rounded-lg bg-white px-1.5 py-0.5 text-xs">
+      <div class="select-container">
         <span class="text-slate-600">Font pt</span>
         <select id="fontSizeSel" class="outline-none bg-transparent">
           <option>8</option><option>10</option><option>12</option>
           <option selected>14</option><option>16</option><option>18</option><option>20</option>
         </select>
       </div>
-      <div class="flex items-center gap-1 border border-slate-200 rounded-lg bg-white px-1.5 py-0.5 text-xs">
+      <div class="select-container">
         <span class="text-slate-600">Line</span>
         <select id="lineHeightSel" class="outline-none bg-transparent">
           <option>1.0</option><option>1.1</option><option selected>1.2</option>
@@ -222,7 +257,7 @@
 
   <script>
     // ====== CONFIG ======
-    const PDF_URL = 'https://raw.githubusercontent.com/nuhadwrk/admission/main/Admission.pdf'; // Fixed raw GitHub URL
+    const PDF_URL = 'https://raw.githubusercontent.com/nuhadwrk/admission/main/Admission.pdf';
 
     // ====== Elements ======
     const modeSel = document.getElementById('modeSel');
@@ -254,7 +289,8 @@
     let anchorsByPage = {};
     let values = {};
     let currentScale = 1;
-    let currentDPR = Math.min(window.devicePixelRatio || 1, 1.5); // Cap DPR for mobile
+    let currentDPR = Math.min(window.devicePixelRatio || 1, 1.5);
+    let lastStageW = 0;
 
     // ====== Toolbar Toggle ======
     function toggleToolbar() {
@@ -269,10 +305,6 @@
     // ====== Helpers ======
     function setEnabled(enabled) {
       [addFieldBtn, delFieldBtn, dupFieldBtn, saveAnchorsBtn, loadAnchorsBtn, exportAnchorsBtn, printBtn, exportBtn, applyNameBtn].forEach(b => b.disabled = !enabled);
-      const design = modeSel.value === 'design';
-      document.body.classList.toggle('design', design);
-      fontSizeSel.disabled = !design;
-      lineHeightSel.disabled = !design;
       refreshBoxesInteractivity();
     }
 
@@ -310,10 +342,13 @@
 
     // ====== Scale + Render ======
     async function renderAllPages() {
-      pagesRoot.innerHTML = '';
       const cs = getComputedStyle(stage);
       const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
-      const stageWExact = Math.max(stage.clientWidth - padX, 280); // Smaller min-width for mobile
+      const stageWExact = Math.max(stage.clientWidth - padX, 280);
+      if (Math.abs(stageWExact - lastStageW) < 5) return;
+      lastStageW = stageWExact;
+
+      pagesRoot.innerHTML = '';
       const page1 = await pdfDoc.getPage(1);
       const v1 = page1.getViewport({ scale: 1 });
       currentScale = stageWExact / v1.width;
@@ -362,7 +397,7 @@
 
       const fpt = a.fpt || 14;
       tb.style.fontSize = (fpt * currentScale) + 'px';
-      tb.style.lineHeight = (a.lh || 1.2);
+      tb.style.lineHeight = (a.lh || 1.2).toString();
 
       const s = toScreen(a, pageWrap.clientWidth, pageWrap.clientHeight);
       tb.style.left = s.left + 'px';
@@ -415,7 +450,7 @@
         const p = parseInt(pageWrap.dataset.page);
         const cw = pageWrap.clientWidth, ch = pageWrap.clientHeight;
         const list = [...pageWrap.querySelectorAll('.box')].map(tb => {
-          const fpt = parseFloat(tb.style.fontSize) / currentScale;
+          const fpt = parseFloat(tb.style.fontSize) / currentScale || 14;
           return {
             name: tb.dataset.name || '',
             x: (parseFloat(tb.style.left) || 0) / cw,
@@ -449,7 +484,7 @@
       const pageWrap = selected.closest('.page');
       const p = parseInt(pageWrap.dataset.page);
       const cw = pageWrap.clientWidth, ch = pageWrap.clientHeight;
-      const fpt = parseFloat(selected.style.fontSize) / currentScale;
+      const fpt = parseFloat(selected.style.fontSize) / currentScale || 14;
       const a = {
         name: (selected.dataset.name || '') + '_copy',
         x: (parseFloat(selected.style.left) || 0) / cw + 0.02,
@@ -478,14 +513,32 @@
     }
 
     function applyFontSize() {
-      if (!selected) return;
-      selected.style.fontSize = (parseFloat(fontSizeSel.value) * currentScale) + 'px';
+      if (!selected) {
+        console.log('applyFontSize: No box selected');
+        return;
+      }
+      const fontSize = parseFloat(fontSizeSel.value);
+      if (isNaN(fontSize)) {
+        console.error('applyFontSize: Invalid font size');
+        return;
+      }
+      selected.style.fontSize = (fontSize * currentScale) + 'px';
+      console.log('applyFontSize: Set font-size to', selected.style.fontSize, 'for box', selected.dataset.name);
       autoSaveAnchors();
     }
 
     function applyLineHeight() {
-      if (!selected) return;
-      selected.style.lineHeight = lineHeightSel.value;
+      if (!selected) {
+        console.log('applyLineHeight: No box selected');
+        return;
+      }
+      const lineHeight = parseFloat(lineHeightSel.value);
+      if (isNaN(lineHeight)) {
+        console.error('applyLineHeight: Invalid line height');
+        return;
+      }
+      selected.style.lineHeight = lineHeight.toString();
+      console.log('applyLineHeight: Set line-height to', selected.style.lineHeight, 'for box', selected.dataset.name);
       autoSaveAnchors();
     }
 
@@ -678,6 +731,8 @@
 
     modeSel.addEventListener('change', () => {
       document.body.classList.toggle('design', modeSel.value === 'design');
+      fontSizeSel.disabled = modeSel.value !== 'design';
+      lineHeightSel.disabled = modeSel.value !== 'design';
       refreshBoxesInteractivity();
     });
 
@@ -712,7 +767,7 @@
       clearTimeout(_resizeTO);
       _resizeTO = setTimeout(async () => {
         await renderAllPages();
-      }, 120);
+      }, 200);
     });
 
     async function loadPdf() {
@@ -753,6 +808,9 @@
         console.warn('No anchors.json found or failed to load:', e);
       }
       await loadPdf();
+      // Initial mode setup
+      fontSizeSel.disabled = modeSel.value !== 'design';
+      lineHeightSel.disabled = modeSel.value !== 'design';
     })();
   </script>
 </body>
