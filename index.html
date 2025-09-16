@@ -20,26 +20,94 @@
 
     #chrome{ max-width:1100px; margin:0 auto; padding:clamp(8px,2vw,20px); }
 
-    #toolbar{ position:sticky; top:0; z-index:50; display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; padding:.5rem; background:rgba(255,255,255,.96); backdrop-filter:blur(6px); border:1px solid #e5e7eb; border-radius:14px; box-shadow:0 8px 30px rgba(0,0,0,.08); }
-    .btn{ display:inline-flex; align-items:center; justify-content:center; gap:.5rem; padding:.6rem .9rem; border:1px solid #e5e7eb; border-radius:12px; background:#fff; color:#0f172a; font-weight:600; }
+    #toolbar{ 
+      position:sticky; 
+      top:0; 
+      z-index:50; 
+      display:flex; 
+      flex-wrap:wrap; 
+      gap:.25rem; 
+      align-items:center; 
+      padding:.4rem; 
+      background:rgba(255,255,255,.96); 
+      border:1px solid #e5e7eb; 
+      border-radius:12px; 
+      box-shadow:0 4px 20px rgba(0,0,0,.08); 
+    }
+    .btn{ 
+      display:inline-flex; 
+      align-items:center; 
+      justify-content:center; 
+      gap:.3rem; 
+      padding:.5rem .7rem; 
+      border:1px solid #e5e7eb; 
+      border-radius:10px; 
+      background:#fff; 
+      color:#0f172a; 
+      font-weight:600; 
+      font-size:.9rem; 
+    }
     .btn-primary{ background:#2563eb; color:#fff; border-color:#1d4ed8; }
 
-    #stage{ max-height:calc(100vh - 170px); overflow:auto; background:#fff; border:1px solid #e5e7eb; border-radius:16px; padding:clamp(6px,1.5vw,16px); }
+    #stage{ 
+      max-height:calc(100vh - 120px); 
+      overflow:auto; 
+      background:#fff; 
+      border:1px solid #e5e7eb; 
+      border-radius:16px; 
+      padding:clamp(6px,1.5vw,16px); 
+      margin-top:8px; 
+    }
     #pages{ display:flex; flex-direction:column; gap:clamp(12px,2vw,24px); align-items:center; }
 
     .page{ position:relative; }
     .page canvas{ display:block; border-radius:0; box-shadow:0 6px 18px rgba(0,0,0,.06); }
 
-    .box{ position:absolute; background:transparent; color:#0f172a; min-width:40px; min-height:22px; border-radius:6px; padding:4px 6px; line-height:1.2; outline:none; overflow:hidden; white-space:pre-wrap; -webkit-user-select:text; user-select:text; }
+    .box{ 
+      position:absolute; 
+      background:transparent; 
+      color:#0f172a; 
+      min-width:30px; 
+      min-height:18px; 
+      border-radius:6px; 
+      padding:3px 5px; 
+      line-height:1.2; 
+      outline:none; 
+      overflow:hidden; 
+      white-space:pre-wrap; 
+      -webkit-user-select:text; 
+      user-select:text; 
+    }
     body.design .box{ resize:both; border:1px dashed transparent; }
     body.design .box.sel{ border-color:#3b82f6; box-shadow:0 0 0 4px var(--ring); background:rgba(255,255,255,.9) }
     body:not(.design) .box{ resize:none; }
     .box:focus{ box-shadow:0 0 0 4px var(--ring); background:rgba(255,255,255,.85); }
 
-    @media print{ body{ background:#fff } #chrome>*:not(#stage){ display:none!important } #stage{ border:0; padding:0 } .page canvas{ box-shadow:none } }
+    @media print{ 
+      body{ background:#fff } 
+      #chrome>*:not(#stage){ display:none!important } 
+      #stage{ border:0; padding:0 } 
+      .page canvas{ box-shadow:none } 
+    }
     @media (max-width: 640px) {
-      #toolbar { flex-direction: column; align-items: stretch; }
-      .box { min-width: 30px; min-height: 18px; }
+      #toolbar { 
+        flex-direction: column; 
+        align-items: stretch; 
+        padding:.3rem; 
+        gap:.2rem; 
+      }
+      .btn { 
+        padding:.4rem .6rem; 
+        font-size:.85rem; 
+      }
+      /* Hide non-essential designer controls on mobile */
+      #saveAnchorsBtn, #loadAnchorsBtn, #importAnchorsInput { 
+        display: none; 
+      }
+      #stage { 
+        max-height: calc(100vh - 200px); /* Adjusted for compact toolbar */
+      }
+      .box { min-width: 25px; min-height: 16px; font-size: clamp(10px, 3vw, 12px); }
     }
   </style>
 </head>
@@ -81,7 +149,7 @@
       </div>
       <div class="flex items-center gap-2 border border-slate-200 rounded-xl bg-white px-2 py-1 text-sm">
         <span class="text-slate-600">Name</span>
-        <input id="fieldName" class="w-40 outline-none" placeholder="patient_name" />
+        <input id="fieldName" class="w-32 outline-none" placeholder="patient_name" />
         <button id="applyNameBtn" class="btn">Apply</button>
       </div>
 
@@ -91,8 +159,8 @@
       <button id="saveAnchorsBtn" class="btn" title="Save anchors (browser)">Save</button>
       <button id="loadAnchorsBtn" class="btn" title="Load anchors (browser)">Load</button>
       <button id="exportAnchorsBtn" class="btn btn-primary" title="Download anchors JSON">Export JSON</button>
-      <label class="btn" title="Import anchors JSON">
-        <input id="importAnchorsInput" type="file" accept="application/json" class="hidden" />
+      <label class="btn" id="importAnchorsInput" title="Import anchors JSON">
+        <input type="file" accept="application/json" class="hidden" />
         Import JSON
       </label>
 
@@ -112,7 +180,7 @@
 
   <script>
     // ====== CONFIG ======
-    const PDF_URL = './Admission.pdf'; // Fixed PDF hosted on GitHub
+    const PDF_URL = 'https://raw.githubusercontent.com/nuhadwrk/admission/main/Admission.pdf'; // Fixed raw GitHub URL
 
     // ====== Elements ======
     const modeSel = document.getElementById('modeSel');
@@ -126,7 +194,7 @@
     const saveAnchorsBtn = document.getElementById('saveAnchorsBtn');
     const loadAnchorsBtn = document.getElementById('loadAnchorsBtn');
     const exportAnchorsBtn = document.getElementById('exportAnchorsBtn');
-    const importAnchorsInput = document.getElementById('importAnchorsInput');
+    const importAnchorsInput = document.querySelector('#importAnchorsInput input');
     const printBtn = document.getElementById('printBtn');
     const exportBtn = document.getElementById('exportBtn');
     const stage = document.getElementById('stage');
@@ -136,7 +204,7 @@
 
     // ====== State ======
     let pdfDoc = null;
-    let fileKey = PDF_URL.split('/').pop() || 'admission';
+    let fileKey = 'Admission'; // Simplified for the fixed PDF
     let adding = false;
     let selected = null;
     let anchorsByPage = {};
@@ -602,8 +670,8 @@
         await renderAllPages();
         setEnabled(true);
       } catch (e) {
-        console.error(e);
-        alert('Failed to load Admission.pdf. Ensure it is available in the repository.');
+        console.error('PDF load error:', e);
+        alert('Failed to load Admission.pdf from GitHub. Ensure the file is public and accessible at ' + PDF_URL);
         setEnabled(false);
       } finally {
         overlay.classList.add('hidden');
@@ -611,16 +679,17 @@
     }
 
     (async function init() {
-      // Load anchors.json if available
+      // Try to load anchors.json from GitHub raw (if you upload it to the repo later)
       try {
-        const p = await fetch('./anchors.json', { cache: 'no-store' });
+        const p = await fetch('https://raw.githubusercontent.com/nuhadwrk/admission/main/anchors.json', { cache: 'no-store' });
         if (p.ok) {
           const j = await p.json();
           anchorsByPage = j.anchorsByPage || j;
         }
-      } catch {}
+      } catch (e) {
+        console.warn('No anchors.json found or failed to load:', e);
+      }
       await loadPdf();
-      setEnabled(true);
     })();
   </script>
 </body>
