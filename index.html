@@ -31,13 +31,16 @@
     .page canvas{ display:block; border-radius:0; box-shadow:0 6px 18px rgba(0,0,0,.06); }
 
     .box{ position:absolute; background:transparent; color:#0f172a; min-width:40px; min-height:22px; border-radius:6px; padding:4px 6px; line-height:1.2; outline:none; overflow:hidden; white-space:pre-wrap; -webkit-user-select:text; user-select:text; }
-    /* Show resize handles only in design mode */
     body.design .box{ resize:both; border:1px dashed transparent; }
     body.design .box.sel{ border-color:#3b82f6; box-shadow:0 0 0 4px var(--ring); background:rgba(255,255,255,.9) }
     body:not(.design) .box{ resize:none; }
     .box:focus{ box-shadow:0 0 0 4px var(--ring); background:rgba(255,255,255,.85); }
 
     @media print{ body{ background:#fff } #chrome>*:not(#stage){ display:none!important } #stage{ border:0; padding:0 } .page canvas{ box-shadow:none } }
+    @media (max-width: 640px) {
+      #toolbar { flex-direction: column; align-items: stretch; }
+      .box { min-width: 30px; min-height: 18px; }
+    }
   </style>
 </head>
 <body class="fill min-h-screen">
@@ -48,20 +51,7 @@
     </header>
 
     <div id="toolbar">
-      <!-- Source selection (keep for now; can remove later) -->
-      <label class="btn" title="Load local PDF">
-        <input id="fileInput" type="file" accept="application/pdf" class="hidden" />
-        Load PDF
-      </label>
-      <div class="flex items-center gap-2 border border-slate-200 rounded-xl bg-white px-2 py-1 text-sm">
-        <span class="text-slate-600">or URL</span>
-        <input id="urlInput" type="text" class="w-60 outline-none" placeholder="./Admission.pdf" />
-        <button id="useUrlBtn" class="btn">Use</button>
-      </div>
-
-      <div class="w-px h-6 bg-slate-200 mx-1"></div>
-
-      <!-- Modes -->
+      <!-- Modes (keep for now, to be removed later) -->
       <div class="flex items-center gap-2 border border-slate-200 rounded-xl bg-white px-2 py-1 text-sm">
         <span class="text-slate-600">Mode</span>
         <select id="modeSel" class="outline-none bg-transparent">
@@ -70,15 +60,16 @@
         </select>
       </div>
 
+      <!-- Designer controls (keep for now, to be removed later) -->
       <button id="addFieldBtn" class="btn" title="Add field; then tap page to place">+ Field</button>
       <button id="delFieldBtn" class="btn" title="Delete selected">Delete</button>
       <button id="dupFieldBtn" class="btn" title="Duplicate selected">Duplicate</button>
 
       <div class="flex items-center gap-2 border border-slate-200 rounded-xl bg-white px-2 py-1 text-sm">
-        <span class="text-slate-600">Font px</span>
+        <span class="text-slate-600">Font pt</span>
         <select id="fontSizeSel" class="outline-none bg-transparent">
-          <option>10</option><option>12</option><option>14</option>
-          <option selected>16</option><option>18</option><option>20</option><option>24</option>
+          <option>8</option><option>10</option><option>12</option>
+          <option selected>14</option><option>16</option><option>18</option><option>20</option>
         </select>
       </div>
       <div class="flex items-center gap-2 border border-slate-200 rounded-xl bg-white px-2 py-1 text-sm">
@@ -96,6 +87,7 @@
 
       <div class="w-px h-6 bg-slate-200 mx-1"></div>
 
+      <!-- Save/Load/Export (keep for now, to be simplified later) -->
       <button id="saveAnchorsBtn" class="btn" title="Save anchors (browser)">Save</button>
       <button id="loadAnchorsBtn" class="btn" title="Load anchors (browser)">Load</button>
       <button id="exportAnchorsBtn" class="btn btn-primary" title="Download anchors JSON">Export JSON</button>
@@ -119,302 +111,515 @@
   </div>
 
   <script>
-    // ====== CONFIG (root files by default) ======
-    const DEFAULT_PDF_URL = './Admission.pdf';  // change if needed
+    // ====== CONFIG ======
+    const PDF_URL = './Admission.pdf'; // Fixed PDF hosted on GitHub
 
     // ====== Elements ======
-    const fileInput = document.getElementById('fileInput');
-    const urlInput  = document.getElementById('urlInput');
-    const useUrlBtn = document.getElementById('useUrlBtn');
-
     const modeSel = document.getElementById('modeSel');
-
     const addFieldBtn = document.getElementById('addFieldBtn');
     const delFieldBtn = document.getElementById('delFieldBtn');
     const dupFieldBtn = document.getElementById('dupFieldBtn');
-
     const fontSizeSel = document.getElementById('fontSizeSel');
     const lineHeightSel = document.getElementById('lineHeightSel');
     const fieldNameInput = document.getElementById('fieldName');
     const applyNameBtn = document.getElementById('applyNameBtn');
-
     const saveAnchorsBtn = document.getElementById('saveAnchorsBtn');
     const loadAnchorsBtn = document.getElementById('loadAnchorsBtn');
     const exportAnchorsBtn = document.getElementById('exportAnchorsBtn');
     const importAnchorsInput = document.getElementById('importAnchorsInput');
-
-    const printBtn  = document.getElementById('printBtn');
+    const printBtn = document.getElementById('printBtn');
     const exportBtn = document.getElementById('exportBtn');
-
     const stage = document.getElementById('stage');
     const pagesRoot = document.getElementById('pages');
     const overlay = document.getElementById('overlay');
     const saveBadge = document.getElementById('saveBadge');
 
     // ====== State ======
-    let pdfDoc = null; let fileKey = null; let adding=false; let selected=null;
-    // anchorsByPage: {1:[{name,x,y,w,h,lh, fpt (points), fs (px, optional legacy)}], ...}
-    let anchorsByPage = {}; 
-    let values = {}; // field -> text
-    let currentScale = 1; // CSS px per PDF pt
-    let currentDPR = Math.min(window.devicePixelRatio||1, 2);
+    let pdfDoc = null;
+    let fileKey = PDF_URL.split('/').pop() || 'admission';
+    let adding = false;
+    let selected = null;
+    let anchorsByPage = {};
+    let values = {};
+    let currentScale = 1;
+    let currentDPR = Math.min(window.devicePixelRatio || 1, 1.5); // Cap DPR for mobile
 
     // ====== Helpers ======
-    function setEnabled(enabled){
-      [addFieldBtn,delFieldBtn,dupFieldBtn,saveAnchorsBtn,loadAnchorsBtn,exportAnchorsBtn,printBtn,exportBtn,applyNameBtn].forEach(b=>b.disabled=!enabled);
-      const design = modeSel.value==='design';
+    function setEnabled(enabled) {
+      [addFieldBtn, delFieldBtn, dupFieldBtn, saveAnchorsBtn, loadAnchorsBtn, exportAnchorsBtn, printBtn, exportBtn, applyNameBtn].forEach(b => b.disabled = !enabled);
+      const design = modeSel.value === 'design';
       document.body.classList.toggle('design', design);
-      fontSizeSel.disabled = !design; lineHeightSel.disabled = !design;
+      fontSizeSel.disabled = !design;
+      lineHeightSel.disabled = !design;
       refreshBoxesInteractivity();
     }
 
-    function storageKey(){ return 'anchors:'+ (fileKey||'local'); }
+    function storageKey() { return 'anchors:' + fileKey; }
 
-    function download(filename, data, type='application/json'){
-      const blob = new Blob([data], {type});
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
-      setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+    function download(filename, data, type = 'application/json') {
+      const blob = new Blob([data], { type });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     }
 
-    function showSavedBadge(){ saveBadge.classList.remove('hidden'); clearTimeout(showSavedBadge._t); showSavedBadge._t=setTimeout(()=>saveBadge.classList.add('hidden'), 1200); }
+    function showSavedBadge() {
+      saveBadge.classList.remove('hidden');
+      clearTimeout(showSavedBadge._t);
+      showSavedBadge._t = setTimeout(() => saveBadge.classList.add('hidden'), 1200);
+    }
 
-    function getLineHeightRatio(el){
+    function getLineHeightRatio(el) {
       const inline = parseFloat(el.style.lineHeight);
-      if(!isNaN(inline) && inline > 0) return inline;
+      if (!isNaN(inline) && inline > 0) return inline;
       const cs = getComputedStyle(el);
       const lhPx = parseFloat(cs.lineHeight);
-      const fsPx = parseFloat(cs.fontSize) || 16;
-      if(!isNaN(lhPx) && !isNaN(fsPx) && fsPx>0) return lhPx / fsPx;
-      return 1.2;
+      const fsPx = parseFloat(cs.fontSize) || 14;
+      return !isNaN(lhPx) && !isNaN(fsPx) && fsPx > 0 ? lhPx / fsPx : 1.2;
     }
 
-    function refreshBoxesInteractivity(){
-      document.querySelectorAll('.box').forEach(tb=>{
-        tb.style.resize = (modeSel.value==='design') ? 'both' : 'none';
+    function refreshBoxesInteractivity() {
+      document.querySelectorAll('.box').forEach(tb => {
+        tb.style.resize = (modeSel.value === 'design') ? 'both' : 'none';
       });
     }
 
-    // ====== Scale + Render (HiDPI crisp + identical math on designer/live) ======
-    async function renderAllPages(){
-      pagesRoot.innerHTML='';
-
-      const cs   = getComputedStyle(stage);
+    // ====== Scale + Render ======
+    async function renderAllPages() {
+      pagesRoot.innerHTML = '';
+      const cs = getComputedStyle(stage);
       const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
       const stageWExact = Math.max(stage.clientWidth - padX, 320);
-
       const page1 = await pdfDoc.getPage(1);
-      const v1    = page1.getViewport({ scale: 1 });
-      currentScale = stageWExact / v1.width;             // CSS px per PDF pt
-      currentDPR   = Math.min(window.devicePixelRatio||1, 2); // cap for perf
+      const v1 = page1.getViewport({ scale: 1 });
+      currentScale = stageWExact / v1.width;
+      currentDPR = Math.min(window.devicePixelRatio || 1, 1.5); // Cap for mobile
 
-      for(let p=1; p<=pdfDoc.numPages; p++){
-        const page   = await pdfDoc.getPage(p);
-        const vpCSS  = page.getViewport({ scale: currentScale });          // CSS size
-        const vpHiDPI= page.getViewport({ scale: currentScale*currentDPR });// buffer size
+      for (let p = 1; p <= pdfDoc.numPages; p++) {
+        const page = await pdfDoc.getPage(p);
+        const vpCSS = page.getViewport({ scale: currentScale });
+        const vpHiDPI = page.getViewport({ scale: currentScale * currentDPR });
 
         const pageWrap = document.createElement('div');
-        pageWrap.className='page'; pageWrap.dataset.page=String(p);
-        pageWrap.style.width  = vpCSS.width+'px';
-        pageWrap.style.height = vpCSS.height+'px';
+        pageWrap.className = 'page';
+        pageWrap.dataset.page = String(p);
+        pageWrap.style.width = vpCSS.width + 'px';
+        pageWrap.style.height = vpCSS.height + 'px';
 
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        canvas.width  = Math.round(vpHiDPI.width);
+        canvas.width = Math.round(vpHiDPI.width);
         canvas.height = Math.round(vpHiDPI.height);
-        canvas.style.width  = vpCSS.width+'px';
-        canvas.style.height = vpCSS.height+'px';
+        canvas.style.width = vpCSS.width + 'px';
+        canvas.style.height = vpCSS.height + 'px';
 
-        pageWrap.appendChild(canvas); pagesRoot.appendChild(pageWrap);
+        pageWrap.appendChild(canvas);
+        pagesRoot.appendChild(pageWrap);
         await page.render({ canvasContext: ctx, viewport: vpHiDPI }).promise;
 
-        (anchorsByPage[p]||[]).forEach(a=> spawnBox(p, a));
+        (anchorsByPage[p] || []).forEach(a => spawnBox(p, a));
       }
       overlay?.remove?.();
       refreshBoxesInteractivity();
     }
 
-    function toScreen(a, cw, ch){ return { left:a.x*cw, top:a.y*ch, width:a.w*cw, height:a.h*ch } }
+    function toScreen(a, cw, ch) {
+      return { left: a.x * cw, top: a.y * ch, width: a.w * cw, height: a.h * ch };
+    }
 
-    function spawnBox(pageNo, a){
-      const pageWrap = [...pagesRoot.children].find(el=>el.dataset.page==String(pageNo)); if(!pageWrap) return;
+    function spawnBox(pageNo, a) {
+      const pageWrap = [...pagesRoot.children].find(el => el.dataset.page == String(pageNo));
+      if (!pageWrap) return;
       const tb = document.createElement('div');
-      tb.className='box'; tb.contentEditable=true; tb.dataset.page=String(pageNo);
-      tb.dataset.name=a.name||'';
+      tb.className = 'box';
+      tb.contentEditable = true;
+      tb.dataset.page = String(pageNo);
+      tb.dataset.name = a.name || '';
 
-      // Use PDF point size converted to CSS px for consistent look across devices
-      const cssFs = (a.fpt ? a.fpt*currentScale : (a.fs||16));
-      tb.style.fontSize = cssFs + 'px';
+      const fpt = a.fpt || 14; // Default to 14pt
+      tb.style.fontSize = (fpt * currentScale) + 'px';
       tb.style.lineHeight = (a.lh || 1.2);
 
       const s = toScreen(a, pageWrap.clientWidth, pageWrap.clientHeight);
-      tb.style.left=s.left+'px'; tb.style.top=s.top+'px'; tb.style.width=s.width+'px'; tb.style.height=s.height+'px';
-      tb.textContent = values[a.name||''] || '';
+      tb.style.left = s.left + 'px';
+      tb.style.top = s.top + 'px';
+      tb.style.width = s.width + 'px';
+      tb.style.height = s.height + 'px';
+      tb.textContent = values[a.name || ''] || '';
 
-      tb.addEventListener('input', ()=>{ const k=tb.dataset.name; if(k) values[k]=tb.textContent; autoSaveValues(); });
-
-      tb.addEventListener('pointerdown', (e)=>{
-        if(modeSel.value!=='design') return;
-        tb.classList.add('sel'); selected=tb; tb.setPointerCapture(e.pointerId);
-        tb._drag=true; tb._sx=e.clientX; tb._sy=e.clientY; tb._sl=parseFloat(tb.style.left)||0; tb._st=parseFloat(tb.style.top)||0;
-        fieldNameInput.value = tb.dataset.name||''; 
-        fontSizeSel.value = String(Math.round(parseFloat(tb.style.fontSize)||16));
-        lineHeightSel.value = (Math.round(getLineHeightRatio(tb)*10)/10).toFixed(1);
+      tb.addEventListener('input', () => {
+        const k = tb.dataset.name;
+        if (k) values[k] = tb.textContent;
+        autoSaveValues();
       });
-      tb.addEventListener('pointermove', (e)=>{
-        if(modeSel.value!=='design') return; if(!tb._drag) return;
-        const dx=e.clientX-tb._sx, dy=e.clientY-tb._sy; tb.style.left=(tb._sl+dx)+'px'; tb.style.top=(tb._st+dy)+'px';
-      });
-      tb.addEventListener('pointerup', ()=>{ tb._drag=false; autoSaveAnchors(); });
-      tb.addEventListener('click', (e)=> e.stopPropagation());
-      tb.addEventListener('blur', ()=>{ const k=tb.dataset.name; if(k) values[k]=tb.textContent; autoSaveValues(); });
 
-      pageWrap.appendChild(tb); return tb;
+      tb.addEventListener('pointerdown', (e) => {
+        if (modeSel.value !== 'design') return;
+        tb.classList.add('sel');
+        selected = tb;
+        tb.setPointerCapture(e.pointerId);
+        tb._drag = true;
+        tb._sx = e.clientX;
+        tb._sy = e.clientY;
+        tb._sl = parseFloat(tb.style.left) || 0;
+        tb._st = parseFloat(tb.style.top) || 0;
+        fieldNameInput.value = tb.dataset.name || '';
+        fontSizeSel.value = String(Math.round(fpt));
+        lineHeightSel.value = (Math.round(getLineHeightRatio(tb) * 10) / 10).toFixed(1);
+      });
+      tb.addEventListener('pointermove', (e) => {
+        if (modeSel.value !== 'design' || !tb._drag) return;
+        const dx = e.clientX - tb._sx, dy = e.clientY - tb._sy;
+        tb.style.left = (tb._sl + dx) + 'px';
+        tb.style.top = (tb._st + dy) + 'px';
+      });
+      tb.addEventListener('pointerup', () => { tb._drag = false; autoSaveAnchors(); });
+      tb.addEventListener('click', (e) => e.stopPropagation());
+      tb.addEventListener('blur', () => {
+        const k = tb.dataset.name;
+        if (k) values[k] = tb.textContent;
+        autoSaveValues();
+      });
+
+      pageWrap.appendChild(tb);
+      return tb;
     }
 
-    function getAnchorsFromDom(){
-      const out={};
-      [...pagesRoot.children].forEach(pageWrap=>{
+    function getAnchorsFromDom() {
+      const out = {};
+      [...pagesRoot.children].forEach(pageWrap => {
         const p = parseInt(pageWrap.dataset.page);
         const cw = pageWrap.clientWidth, ch = pageWrap.clientHeight;
-        const list = [...pageWrap.querySelectorAll('.box')].map(tb=>{
-          const fsCss = parseFloat(tb.style.fontSize)||16;
-          const fpt = fsCss / currentScale; // convert CSS px -> PDF points
+        const list = [...pageWrap.querySelectorAll('.box')].map(tb => {
+          const fpt = parseFloat(tb.style.fontSize) / currentScale;
           return {
-            name: tb.dataset.name||'',
-            x: (parseFloat(tb.style.left)||0)/cw,
-            y: (parseFloat(tb.style.top)||0)/ch,
-            w: (tb.offsetWidth)/cw,
-            h: (tb.offsetHeight)/ch,
+            name: tb.dataset.name || '',
+            x: (parseFloat(tb.style.left) || 0) / cw,
+            y: (parseFloat(tb.style.top) || 0) / ch,
+            w: tb.offsetWidth / cw,
+            h: tb.offsetHeight / ch,
             lh: getLineHeightRatio(tb),
-            fpt,              // authoritative font size in points
-            fs: fsCss         // legacy/display
+            fpt
           };
         });
-        out[p]=list;
+        out[p] = list;
       });
       return out;
     }
 
-    function selectBox(tb){ document.querySelectorAll('.box').forEach(b=>b.classList.remove('sel')); selected=tb; if(tb) tb.classList.add('sel'); }
+    function selectBox(tb) {
+      document.querySelectorAll('.box').forEach(b => b.classList.remove('sel'));
+      selected = tb;
+      if (tb) tb.classList.add('sel');
+    }
 
-    function deleteSelected(){ if(!selected) return; selected.remove(); selected=null; autoSaveAnchors(); }
+    function deleteSelected() {
+      if (!selected) return;
+      selected.remove();
+      selected = null;
+      autoSaveAnchors();
+    }
 
-    function duplicateSelected(){ if(!selected) return; const pageWrap = selected.closest('.page'); const p = parseInt(pageWrap.dataset.page); const cw=pageWrap.clientWidth, ch=pageWrap.clientHeight; const fsCss = parseFloat(selected.style.fontSize)||16; const a = { name:(selected.dataset.name||'')+'_copy', x:(parseFloat(selected.style.left)||0)/cw + 0.02, y:(parseFloat(selected.style.top)||0)/ch + 0.02, w:(selected.offsetWidth)/cw, h:(selected.offsetHeight)/ch, lh:getLineHeightRatio(selected), fpt: fsCss/currentScale, fs: fsCss }; a.x=Math.min(a.x,0.95); a.y=Math.min(a.y,0.95); anchorsByPage[p]=anchorsByPage[p]||[]; anchorsByPage[p].push(a); spawnBox(p,a); autoSaveAnchors(); }
+    function duplicateSelected() {
+      if (!selected) return;
+      const pageWrap = selected.closest('.page');
+      const p = parseInt(pageWrap.dataset.page);
+      const cw = pageWrap.clientWidth, ch = pageWrap.clientHeight;
+      const fpt = parseFloat(selected.style.fontSize) / currentScale;
+      const a = {
+        name: (selected.dataset.name || '') + '_copy',
+        x: (parseFloat(selected.style.left) || 0) / cw + 0.02,
+        y: (parseFloat(selected.style.top) || 0) / ch + 0.02,
+        w: selected.offsetWidth / cw,
+        h: selected.offsetHeight / ch,
+        lh: getLineHeightRatio(selected),
+        fpt
+      };
+      a.x = Math.min(a.x, 0.95);
+      a.y = Math.min(a.y, 0.95);
+      anchorsByPage[p] = anchorsByPage[p] || [];
+      anchorsByPage[p].push(a);
+      spawnBox(p, a);
+      autoSaveAnchors();
+    }
 
-    function applyName(){ if(!selected) return; const name = fieldNameInput.value.trim(); selected.dataset.name = name; if(name && !values[name]) values[name]=''; autoSaveAnchors(); }
-    function applyFontSize(){ if(!selected) return; selected.style.fontSize = fontSizeSel.value+'px'; autoSaveAnchors(); }
-    function applyLineHeight(){ if(!selected) return; selected.style.lineHeight = lineHeightSel.value; autoSaveAnchors(); }
+    function applyName() {
+      if (!selected) return;
+      const name = fieldNameInput.value.trim();
+      if (!name) return alert('Field name cannot be empty.');
+      if (Object.keys(values).includes(name)) return alert('Field name already exists.');
+      selected.dataset.name = name;
+      if (!values[name]) values[name] = '';
+      autoSaveAnchors();
+    }
+
+    function applyFontSize() {
+      if (!selected) return;
+      selected.style.fontSize = (parseFloat(fontSizeSel.value) * currentScale) + 'px';
+      autoSaveAnchors();
+    }
+
+    function applyLineHeight() {
+      if (!selected) return;
+      selected.style.lineHeight = lineHeightSel.value;
+      autoSaveAnchors();
+    }
 
     // ===== Local persistence =====
-    function saveAnchors(){ anchorsByPage = getAnchorsFromDom(); const payload = { anchorsByPage, version:4 }; localStorage.setItem(storageKey(), JSON.stringify(payload)); showSavedBadge(); }
-    function loadAnchors(){ const raw = localStorage.getItem(storageKey()); if(!raw) return alert('No saved anchors for this file.'); try{ const p = JSON.parse(raw); anchorsByPage = p.anchorsByPage||{}; renderAllPages(); showSavedBadge(); }catch(e){ alert('Failed to parse anchors JSON.'); } }
-    function exportAnchors(){ const data = JSON.stringify({ anchorsByPage, version:4 }, null, 2); const base = (fileKey||'anchors'); download(base+'-anchors.json', data); }
-    function autoSaveAnchors(){ clearTimeout(autoSaveAnchors._t); autoSaveAnchors._t = setTimeout(saveAnchors, 350); }
+    function saveAnchors() {
+      anchorsByPage = getAnchorsFromDom();
+      const payload = { anchorsByPage, version: 4 };
+      localStorage.setItem(storageKey(), JSON.stringify(payload));
+      showSavedBadge();
+    }
 
-    function autoSaveValues(){ clearTimeout(autoSaveValues._t); autoSaveValues._t = setTimeout(()=>{ localStorage.setItem('values:'+ (fileKey||'local'), JSON.stringify(values)); showSavedBadge(); }, 400); }
-
-    importAnchorsInput.addEventListener('change', async (e)=>{ const f = e.target.files?.[0]; if(!f) return; const text = await f.text(); try{ const p = JSON.parse(text); anchorsByPage = p.anchorsByPage||p; await renderAllPages(); showSavedBadge(); }catch(err){ alert('Invalid JSON'); } });
-
-    // ===== Exact PDF export (vector, matches original) =====
-    function wrapTextBlocks(text){ return text.replace(/\r/g,'').split('\n'); }
-    function wrapLineToWidth(text, font, size, maxWidth){
-      const words = text.split(/\s+/);
-      const lines=[]; let line='';
-      const W = t=>font.widthOfTextAtSize(t, size);
-      for(const w of words){
-        const t = line? line+' '+w : w;
-        if(W(t) <= maxWidth){ line=t; } else { if(line) lines.push(line); line=w; }
+    function loadAnchors() {
+      const raw = localStorage.getItem(storageKey());
+      if (!raw) return alert('No saved anchors for this file.');
+      try {
+        const p = JSON.parse(raw);
+        anchorsByPage = p.anchorsByPage || {};
+        renderAllPages();
+        showSavedBadge();
+      } catch (e) {
+        alert('Failed to parse anchors JSON.');
       }
-      if(line) lines.push(line);
+    }
+
+    function exportAnchors() {
+      const data = JSON.stringify({ anchorsByPage, version: 4 }, null, 2);
+      download(fileKey + '-anchors.json', data);
+    }
+
+    function autoSaveAnchors() {
+      clearTimeout(autoSaveAnchors._t);
+      autoSaveAnchors._t = setTimeout(saveAnchors, 350);
+    }
+
+    function autoSaveValues() {
+      clearTimeout(autoSaveValues._t);
+      autoSaveValues._t = setTimeout(() => {
+        localStorage.setItem('values:' + fileKey, JSON.stringify(values));
+        showSavedBadge();
+      }, 400);
+    }
+
+    importAnchorsInput.addEventListener('change', async (e) => {
+      const f = e.target.files?.[0];
+      if (!f) return;
+      const text = await f.text();
+      try {
+        const p = JSON.parse(text, (key, value) => {
+          if (key === '__proto__' || key === 'constructor') return undefined;
+          return value;
+        });
+        anchorsByPage = p.anchorsByPage || {};
+        await renderAllPages();
+        showSavedBadge();
+      } catch (err) {
+        alert('Invalid or malicious JSON');
+      }
+    });
+
+    // ===== Enhanced Text Wrapping =====
+    function wrapTextBlocks(text) {
+      return text.replace(/\r/g, '').split('\n');
+    }
+
+    function wrapLineToWidth(text, font, size, maxWidth) {
+      const words = text.split(/\s+/);
+      const lines = [];
+      let line = '';
+      const W = t => font.widthOfTextAtSize(t, size);
+      for (const w of words) {
+        const t = line ? line + ' ' + w : w;
+        if (W(t) <= maxWidth) {
+          line = t;
+        } else {
+          if (line) lines.push(line);
+          if (W(w) > maxWidth) {
+            // Fallback for complex scripts: split by character
+            let charLine = '';
+            for (const c of w) {
+              const t = charLine + c;
+              if (W(t) <= maxWidth) {
+                charLine = t;
+              } else {
+                if (charLine) lines.push(charLine);
+                charLine = c;
+              }
+            }
+            if (charLine) line = charLine;
+            else line = '';
+          } else {
+            line = w;
+          }
+        }
+      }
+      if (line) lines.push(line);
       return lines;
     }
 
-    async function buildPdfBlob(){
-      const pdfBytes = await fetch(fileKey || DEFAULT_PDF_URL).then(r=>r.arrayBuffer());
+    async function buildPdfBlob() {
+      const pdfBytes = await fetch(PDF_URL).then(r => r.arrayBuffer());
       const pdf = await PDFLib.PDFDocument.load(pdfBytes);
       const font = await pdf.embedFont(PDFLib.StandardFonts.Helvetica);
 
-      for(let p=1; p<=pdf.getPageCount(); p++){
-        const page = pdf.getPages()[p-1];
-        const { width, height } = page.getSize(); // points
-        const list = anchorsByPage[p]||[];
-        list.forEach(a=>{
-          const name = a.name||''; const text = (values[name]||'').toString(); if(!text) return;
-          const fsPt = a.fpt ? a.fpt : ((a.fs||16) / currentScale); // fallback if older JSON
-          const lh   = a.lh || 1.2; const pad = 2;
-          const boxW = a.w*width - pad*2; const boxH = a.h*height - pad*2;
-          const startX = a.x*width + pad; const topY = height - (a.y*height) - pad;
+      for (let p = 1; p <= pdf.getPageCount(); p++) {
+        const page = pdf.getPages()[p - 1];
+        const { width, height } = page.getSize();
+        const list = anchorsByPage[p] || [];
+        list.forEach(a => {
+          const name = a.name || '';
+          const text = (values[name] || '').toString();
+          if (!text) return;
+          const fpt = a.fpt || 14;
+          const lh = a.lh || 1.2;
+          const pad = 2;
+          const boxW = a.w * width - pad * 2;
+          const boxH = a.h * height - pad * 2;
+          const startX = a.x * width + pad;
+          const topY = height - (a.y * height) - pad;
 
           const blocks = wrapTextBlocks(text);
-          let y = topY - fsPt; // first baseline
-          outer: for(const b of blocks){
-            const lines = wrapLineToWidth(b, font, fsPt, boxW);
-            for(const ln of lines){
-              if( (topY - y) > boxH + fsPt*0.2 ) break outer; // stop if exceeds box
-              page.drawText(ln, { x:startX, y, size:fsPt, font, color: PDFLib.rgb(0,0,0) });
-              y -= fsPt*lh;
+          let y = topY - fpt;
+          outer: for (const b of blocks) {
+            const lines = wrapLineToWidth(b, font, fpt, boxW);
+            for (const ln of lines) {
+              if ((topY - y) > boxH + fpt * 0.2) break outer;
+              page.drawText(ln, { x: startX, y, size: fpt, font, color: PDFLib.rgb(0, 0, 0) });
+              y -= fpt * lh;
             }
-            y -= fsPt*(lh-1); // extra gap for explicit newline
+            y -= fpt * (lh - 1);
           }
         });
       }
       const outBytes = await pdf.save();
-      return new Blob([outBytes], { type:'application/pdf' });
+      return new Blob([outBytes], { type: 'application/pdf' });
     }
 
-    async function doExport(){ const blob = await buildPdfBlob(); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=(fileKey||'admission')+'-filled.pdf'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 5000); }
+    async function doExport() {
+      const blob = await buildPdfBlob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = fileKey + '-filled.pdf';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    }
 
-    async function doPrint(){ const blob = await buildPdfBlob(); const url = URL.createObjectURL(blob); const iframe = document.createElement('iframe'); iframe.style.position='fixed'; iframe.style.right='0'; iframe.style.bottom='0'; iframe.style.width='0'; iframe.style.height='0'; iframe.style.border='0'; document.body.appendChild(iframe); iframe.onload=()=>{ setTimeout(()=>{ try{ iframe.contentWindow.focus(); iframe.contentWindow.print(); }catch{} }, 300)}; iframe.src=url; setTimeout(()=>URL.revokeObjectURL(url), 15000); }
+    async function doPrint() {
+      const blob = await buildPdfBlob();
+      const url = URL.createObjectURL(blob);
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      document.body.appendChild(iframe);
+      iframe.onload = () => {
+        setTimeout(() => {
+          try {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+          } catch {}
+        }, 300);
+      };
+      iframe.src = url;
+      setTimeout(() => URL.revokeObjectURL(url), 15000);
+    }
 
     // ===== Events =====
-    pagesRoot.addEventListener('click', (e)=>{ const tb = e.target.closest('.box'); selectBox(tb||null); });
-    addFieldBtn.addEventListener('click', ()=>{ if(!pdfDoc) return; if(modeSel.value!=='design') return; adding=true; document.body.style.cursor='crosshair'; });
+    pagesRoot.addEventListener('click', (e) => {
+      const tb = e.target.closest('.box');
+      selectBox(tb || null);
+    });
+
+    addFieldBtn.addEventListener('click', () => {
+      if (!pdfDoc || modeSel.value !== 'design') return;
+      adding = true;
+      document.body.style.cursor = 'crosshair';
+    });
+
     delFieldBtn.addEventListener('click', deleteSelected);
     dupFieldBtn.addEventListener('click', duplicateSelected);
     applyNameBtn.addEventListener('click', applyName);
     fontSizeSel.addEventListener('change', applyFontSize);
     lineHeightSel.addEventListener('change', applyLineHeight);
-
     saveAnchorsBtn.addEventListener('click', saveAnchors);
     loadAnchorsBtn.addEventListener('click', loadAnchors);
     exportAnchorsBtn.addEventListener('click', exportAnchors);
-
     printBtn.addEventListener('click', doPrint);
     exportBtn.addEventListener('click', doExport);
 
-    fileInput.addEventListener('change', async (e)=>{ const f = e.target.files?.[0]; if(!f) return; if(f.type!=='application/pdf'){ alert('Choose a PDF'); return; } if(window._url) URL.revokeObjectURL(window._url); window._url = URL.createObjectURL(f); fileKey = f.name; anchorsByPage={}; values={}; await loadPdf(window._url); setEnabled(true); });
-    useUrlBtn.addEventListener('click', async ()=>{ const url=(urlInput.value||'').trim(); if(!url){ alert('Enter a PDF URL'); return; } fileKey=url.split('/').pop()||'remote'; anchorsByPage={}; values={}; await loadPdf(url); setEnabled(true); });
-
-    modeSel.addEventListener('change', ()=>{ document.body.classList.toggle('design', modeSel.value==='design'); refreshBoxesInteractivity(); });
-
-    // Normalize add-on-click to wrapper size (not canvas buffer)
-    pagesRoot.addEventListener('click', (e)=>{
-      if(!adding || modeSel.value!=='design') return;
-      const pageWrap = e.target.closest('.page'); if(!pageWrap) return;
-      const r = pageWrap.getBoundingClientRect();
-      const x = (e.clientX - r.left) / r.width;
-      const y = (e.clientY - r.top)  / r.height;
-      const a = { name:'', x: Math.max(0, Math.min(1, x-0.15)), y: Math.max(0, Math.min(1, y-0.03)), w:0.3, h:0.06, lh: parseFloat(lineHeightSel.value)||1.2, fpt: (parseFloat(fontSizeSel.value)||16)/currentScale, fs: parseFloat(fontSizeSel.value)||16 };
-      const p = parseInt(pageWrap.dataset.page);
-      anchorsByPage[p] = anchorsByPage[p]||[]; anchorsByPage[p].push(a);
-      spawnBox(p, a); adding=false; document.body.style.cursor='default'; autoSaveAnchors();
+    modeSel.addEventListener('change', () => {
+      document.body.classList.toggle('design', modeSel.value === 'design');
+      refreshBoxesInteractivity();
     });
 
-    // ===== Load PDF & optional anchors.json on boot =====
-    let _resizeTO=null; window.addEventListener('resize', ()=>{ if(!pdfDoc) return; clearTimeout(_resizeTO); _resizeTO=setTimeout(async()=>{ await renderAllPages(); }, 120); });
+    pagesRoot.addEventListener('click', (e) => {
+      if (!adding || modeSel.value !== 'design') return;
+      const pageWrap = e.target.closest('.page');
+      if (!pageWrap) return;
+      const r = pageWrap.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width;
+      const y = (e.clientY - r.top) / r.height;
+      const a = {
+        name: '',
+        x: Math.max(0, Math.min(1, x - 0.15)),
+        y: Math.max(0, Math.min(1, y - 0.03)),
+        w: 0.3,
+        h: 0.06,
+        lh: parseFloat(lineHeightSel.value) || 1.2,
+        fpt: parseFloat(fontSizeSel.value) || 14
+      };
+      const p = parseInt(pageWrap.dataset.page);
+      anchorsByPage[p] = anchorsByPage[p] || [];
+      anchorsByPage[p].push(a);
+      spawnBox(p, a);
+      adding = false;
+      document.body.style.cursor = 'default';
+      autoSaveAnchors();
+    });
 
-    async function loadPdf(url){
-      try{ overlay.classList.remove('hidden'); setEnabled(false); pdfDoc = await pdfjsLib.getDocument(url).promise; await renderAllPages(); setEnabled(true); }
-      catch(e){ console.error(e); alert('Failed to load PDF.'); setEnabled(false); }
-      finally{ overlay.classList.add('hidden'); }
+    let _resizeTO = null;
+    window.addEventListener('resize', () => {
+      if (!pdfDoc) return;
+      clearTimeout(_resizeTO);
+      _resizeTO = setTimeout(async () => {
+        await renderAllPages();
+      }, 120);
+    });
+
+    async function loadPdf() {
+      try {
+        overlay.classList.remove('hidden');
+        setEnabled(false);
+        pdfDoc = await pdfjsLib.getDocument(PDF_URL).promise;
+        await renderAllPages();
+        setEnabled(true);
+      } catch (e) {
+        console.error(e);
+        alert('Failed to load Admission.pdf. Ensure it is available in the repository.');
+        setEnabled(false);
+      } finally {
+        overlay.classList.add('hidden');
+      }
     }
 
-    (async function init(){
-      document.getElementById('urlInput').value = DEFAULT_PDF_URL;
-      fileKey = DEFAULT_PDF_URL.split('/').pop()||'remote';
-      // Try to fetch anchors.json from root; ignore if missing
-      try{ const p = await fetch('./anchors.json', {cache:'no-store'}); if(p.ok){ const j = await p.json(); anchorsByPage = j.anchorsByPage || j; } }catch{}
-      await loadPdf(DEFAULT_PDF_URL);
+    (async function init() {
+      // Load anchors.json if available
+      try {
+        const p = await fetch('./anchors.json', { cache: 'no-store' });
+        if (p.ok) {
+          const j = await p.json();
+          anchorsByPage = j.anchorsByPage || j;
+        }
+      } catch {}
+      await loadPdf();
       setEnabled(true);
     })();
   </script>
