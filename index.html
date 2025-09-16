@@ -1,0 +1,229 @@
+<!-- ========== index.html (Fill-only, mobile-first, exact PDF export/print) ========== -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Admission Form — Fill</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet"/>
+  <!-- PDF.js to render background pages for on-screen filling -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <script>pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
+  <!-- pdf-lib for exact vector export/print (no rounded corners) -->
+  <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <style>
+    :root{ --ring: rgba(59,130,246,.35) }
+    html,body{ height:100%; }
+    body{ font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial; background:#f8fafc; }
+
+    /* Mobile-first layout */
+    #chrome{ max-width:900px; margin:0 auto; padding:clamp(8px,2vw,20px); }
+
+    /* Sticky footer toolbar for mobile thumbs */
+    #toolbar{ position:sticky; bottom:0; inset-inline:0; z-index:50; display:flex; gap:.5rem; align-items:center; justify-content:space-between; padding:.5rem; background:rgba(255,255,255,.9); backdrop-filter:saturate(1.2) blur(6px); border:1px solid #e5e7eb; border-radius:14px; box-shadow:0 8px 30px rgba(0,0,0,.08); }
+    .btn{ display:inline-flex; align-items:center; justify-content:center; gap:.5rem; padding:.65rem .9rem; border:1px solid #e5e7eb; border-radius:12px; background:#fff; color:#0f172a; font-weight:600; }
+    .btn-primary{ background:#2563eb; color:#fff; border-color:#1d4ed8; }
+
+    /* Stage scrolls vertically; pages fit width */
+    #stage{ max-height:calc(100vh - 170px); overflow:auto; background:#fff; border:1px solid #e5e7eb; border-radius:16px; padding:clamp(6px,1.5vw,16px); }
+    #pages{ display:flex; flex-direction:column; gap:clamp(14px,2vw,26px); align-items:center; }
+
+    .page{ position:relative; }
+    .page canvas{ display:block; /* precise edges */ border-radius:0; box-shadow:0 6px 18px rgba(0,0,0,.06); }
+
+    /* Fill-only text boxes (no drag/resize) */
+    .box{ position:absolute; background:transparent; color:#0f172a; min-width:40px; min-height:22px; border-radius:6px; padding:4px 6px; line-height:1.2; outline:none; resize:none; overflow:hidden; white-space:pre-wrap; -webkit-user-select:text; user-select:text; }
+    .box:focus{ box-shadow:0 0 0 4px var(--ring); background:rgba(255,255,255,.85); }
+
+    /* Print via generated PDF: hide on-screen UI */
+    @media print{ body{ background:#fff } #chrome>*:not(#stage){ display:none!important } #stage{ border:0; padding:0 } }
+  </style>
+</head>
+<body>
+  <div id="chrome" class="space-y-3">
+    <header class="text-center">
+      <h1 class="text-2xl font-extrabold tracking-tight text-slate-900">Admission Form</h1>
+      <p class="text-slate-600 text-sm">Fill on mobile · exact PDF export/print</p>
+    </header>
+
+    <div id="stage">
+      <div id="pages"></div>
+      <div id="overlay" class="flex items-center justify-center py-16 text-slate-600">Loading…</div>
+    </div>
+
+    <div id="toolbar">
+      <button id="clearBtn" class="btn" title="Clear all text">Clear</button>
+      <div class="grow"></div>
+      <button id="saveBtn" class="btn" title="Save filled text to this device">Save</button>
+      <button id="printBtn" class="btn" title="Print">Print</button>
+      <button id="exportBtn" class="btn btn-primary" title="Export filled PDF">Export PDF</button>
+    </div>
+
+    <p id="saveBadge" class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-full w-fit hidden">Saved</p>
+  </div>
+
+  <script>
+    // ====== CONFIG (edit these for your repo) ======
+    const PDF_URL       = './assets/admission.pdf';           // put your PDF here
+    const ANCHORS_URL   = './assets/anchors.json';            // exported from designer
+    const STORAGE_KEY   = 'admission:values';                 // localStorage key
+
+    // ====== Elements ======
+    const pagesRoot = document.getElementById('pages');
+    const overlay   = document.getElementById('overlay');
+    const saveBadge = document.getElementById('saveBadge');
+    const saveBtn   = document.getElementById('saveBtn');
+    const clearBtn  = document.getElementById('clearBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const printBtn  = document.getElementById('printBtn');
+
+    // ====== State ======
+    let anchorsByPage = {}; // {1:[{name,x,y,w,h,fs,lh}]}
+    let values = {};        // {name: text}
+    let pdfDoc = null;      // pdf.js doc for screen render
+
+    // ====== Helpers ======
+    function showSaved(){ saveBadge.classList.remove('hidden'); clearTimeout(showSaved._t); showSaved._t=setTimeout(()=>saveBadge.classList.add('hidden'), 1200); }
+    function toScreen(a, cw, ch){ return { left:a.x*cw, top:a.y*ch, width:a.w*cw, height:a.h*ch } }
+
+    function loadValues(){ try{ values = JSON.parse(localStorage.getItem(STORAGE_KEY)||'{}') }catch{ values={} } }
+    function saveValues(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(values)); showSaved(); }
+    function clearValues(){ values={}; document.querySelectorAll('.box').forEach(b=>b.textContent=''); saveValues(); }
+
+    // ====== PDF.js render for on-screen filling ======
+    async function renderAllPages(){
+      pagesRoot.innerHTML='';
+      const viewport1 = (await pdfDoc.getPage(1)).getViewport({ scale:1 });
+      const stageW = Math.max(document.getElementById('stage').clientWidth - 8, 320);
+      const scale = stageW / viewport1.width; // fit width
+
+      for(let p=1; p<=pdfDoc.numPages; p++){
+        const page = await pdfDoc.getPage(p);
+        const vp = page.getViewport({ scale });
+        const pageWrap = document.createElement('div'); pageWrap.className='page'; pageWrap.dataset.page=String(p);
+        pageWrap.style.width = vp.width+'px'; pageWrap.style.height = vp.height+'px';
+
+        const canvas = document.createElement('canvas'); canvas.width=vp.width; canvas.height=vp.height;
+        pageWrap.appendChild(canvas); pagesRoot.appendChild(pageWrap);
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+
+        (anchorsByPage[p]||[]).forEach(a=> spawnBox(p,a));
+      }
+      overlay.remove();
+    }
+
+    function spawnBox(pageNo, a){
+      const pageWrap = [...pagesRoot.children].find(el=>el.dataset.page==String(pageNo)); if(!pageWrap) return;
+      const tb = document.createElement('div'); tb.className='box'; tb.contentEditable=true; tb.dataset.name=a.name||''; tb.style.fontSize=(a.fs||16)+'px'; tb.style.lineHeight=(a.lh||1.2);
+      const s = toScreen(a, pageWrap.clientWidth, pageWrap.clientHeight);
+      tb.style.left=s.left+'px'; tb.style.top=s.top+'px'; tb.style.width=s.width+'px'; tb.style.height=s.height+'px';
+      tb.textContent = values[a.name||''] || '';
+      tb.addEventListener('input', ()=>{ const k=tb.dataset.name; if(k) values[k]=tb.textContent; autoSave(); });
+      pageWrap.appendChild(tb);
+    }
+
+    function autoSave(){ clearTimeout(autoSave._t); autoSave._t=setTimeout(saveValues, 400); }
+
+    // ====== Exact PDF export using pdf-lib ======
+    async function buildPdfBlob(){
+      // Load original PDF and anchors
+      const [pdfBytes] = await Promise.all([
+        fetch(PDF_URL).then(r=>r.arrayBuffer())
+      ]);
+      const pdf = await PDFLib.PDFDocument.load(pdfBytes);
+      const font = await pdf.embedFont(PDFLib.StandardFonts.Helvetica);
+
+      for(let p=1; p<=pdf.getPageCount(); p++){
+        const page = pdf.getPages()[p-1];
+        const { width, height } = page.getSize();
+        const list = anchorsByPage[p]||[];
+        list.forEach(a=>{
+          const name = a.name||''; if(!name) return; const text = (values[name]||'').toString();
+          if(!text) return;
+          const fs = a.fs||16; const lh = a.lh||1.2; const pad = 2; // small padding inside box
+          const boxW = a.w*width - pad*2; const boxH = a.h*height - pad*2;
+          const startX = a.x*width + pad; // left
+          const topY = height - (a.y*height) - pad; // top
+
+          const lines = wrapText(text, font, fs, boxW);
+          let y = topY - fs; // first baseline
+          for(let i=0;i<lines.length;i++){
+            if( (topY - (y)) > boxH + fs*0.2 ) break; // stop if exceeds box
+            page.drawText(lines[i], { x:startX, y, size:fs, font, color: PDFLib.rgb(0,0,0) });
+            y -= fs*lh;
+          }
+        });
+      }
+      const outBytes = await pdf.save();
+      return new Blob([outBytes], { type:'application/pdf' });
+    }
+
+    function wrapText(text, font, fontSize, maxWidth){
+      // Split by explicit newlines first
+      const blocks = text.replace(/\r/g,'').split('\n');
+      const lines = [];
+      const widthOf = t => font.widthOfTextAtSize(t, fontSize);
+      for(const block of blocks){
+        const words = block.split(/\s+/);
+        let line = '';
+        for(const w of words){
+          const test = line? line + ' ' + w : w;
+          if(widthOf(test) <= maxWidth) line = test; else { if(line) lines.push(line); line = w; }
+        }
+        lines.push(line);
+      }
+      return lines;
+    }
+
+    async function doExport(){ const blob = await buildPdfBlob(); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='admission-filled.pdf'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 5000); }
+
+    async function doPrint(){
+      const blob = await buildPdfBlob();
+      const url = URL.createObjectURL(blob);
+      const iframe = document.createElement('iframe');
+      iframe.style.position='fixed'; iframe.style.right='0'; iframe.style.bottom='0'; iframe.style.width='0'; iframe.style.height='0'; iframe.style.border='0';
+      document.body.appendChild(iframe);
+      iframe.onload = ()=>{ setTimeout(()=>{ try{ iframe.contentWindow.focus(); iframe.contentWindow.print(); }catch{} }, 300) };
+      iframe.src = url;
+      setTimeout(()=>URL.revokeObjectURL(url), 15000);
+    }
+
+    // ====== Boot ======
+    (async function init(){
+      loadValues();
+      // Load anchors JSON first
+      anchorsByPage = await fetch(ANCHORS_URL).then(r=>r.json()).then(p=>p.anchorsByPage||p);
+      // Load PDF for screen rendering
+      pdfDoc = await pdfjsLib.getDocument(PDF_URL).promise; await renderAllPages();
+    })();
+
+    // ====== Events ======
+    saveBtn.addEventListener('click', saveValues);
+    clearBtn.addEventListener('click', clearValues);
+    exportBtn.addEventListener('click', doExport);
+    printBtn.addEventListener('click', doPrint);
+  </script>
+</body>
+</html>
+
+
+<!-- ========== anchors.json (example structure to commit in /assets) ==========
+{
+  "anchorsByPage": {
+    "1": [
+      {"name":"patient_name","x":0.12,"y":0.18,"w":0.50,"h":0.05,"fs":16,"lh":1.2},
+      {"name":"age","x":0.70,"y":0.18,"w":0.18,"h":0.05,"fs":16,"lh":1.2}
+    ],
+    "2": []
+  }
+}
+-->
+
+
+<!-- ========== designer.html (Optional — keep this privately to create anchors) ========== -->
+<!-- Use your previously provided designer (with Design/Fill, Load PDF, Export/Import Anchors). 
+     Steps: open designer.html locally, load your PDF, place fields, Export JSON, 
+     commit that JSON as /assets/anchors.json in the repo used by index.html above. -->
