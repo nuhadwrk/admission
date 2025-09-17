@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -13,6 +14,12 @@
   <script>pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
   <!-- pdf-lib (exact vector export/print) -->
   <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  
+  <!-- Firebase (compat for simplicity) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+
   <style>
     :root { --ring: rgba(59,130,246,.35); }
     html, body { height: 100%; margin: 0; }
@@ -284,6 +291,16 @@
     // ====== CONFIG ======
     const PDF_URL = 'https://raw.githubusercontent.com/nuhadwrk/admission/main/Admission.pdf';
 
+    // Firebase Config (provided)
+    const firebaseConfig = {
+      apiKey: "AIzaSyCVX1eynTqjloTeEOUNPZ4ctn99VkMXAhU",
+      authDomain: "admission-8236a.firebaseapp.com",
+      projectId: "admission-8236a",
+      storageBucket: "admission-8236a.firebasestorage.app",
+      messagingSenderId: "1095611649881",
+      appId: "1:1095611649881:web:f9e6f82ba6f469decd0648"
+    };
+
     // ====== Elements ======
     const modeSel = document.getElementById('modeSel');
     const addFieldBtn = document.getElementById('addFieldBtn');
@@ -316,6 +333,9 @@
     let currentScale = 1;
     let currentDPR = Math.min(window.devicePixelRatio || 1, 1.5);
     let lastStageW = 0;
+
+    // ====== Firebase handles ======
+    let fbApp, auth, db, docRef, uid = 'anon';
 
     // ====== Toolbar Toggle ======
     function toggleToolbar() {
@@ -405,6 +425,7 @@
       }
       overlay?.remove?.();
       refreshBoxesInteractivity();
+      applyValuesToDom(); // ensure freshly loaded values appear
     }
 
     function toScreen(a, cw, ch) {
@@ -567,7 +588,7 @@
       autoSaveAnchors();
     }
 
-    // ===== Local persistence =====
+    // ===== Local persistence (anchors + values as backup) =====
     function saveAnchors() {
       anchorsByPage = getAnchorsFromDom();
       const payload = { anchorsByPage, version: 4 };
@@ -598,12 +619,71 @@
       autoSaveAnchors._t = setTimeout(saveAnchors, 350);
     }
 
+    // ===== Firestore persistence for VALUES =====
+    async function ensureFirebase() {
+      try {
+        fbApp = firebase.initializeApp(firebaseConfig);
+        auth = firebase.auth();
+        db = firebase.firestore();
+        // Offline cache (best-effort)
+        try { await db.enablePersistence({ synchronizeTabs: true }); } catch (_) {}
+        // Anonymous sign-in so each device/session can have its own doc
+        const cred = await auth.signInAnonymously();
+        uid = cred.user?.uid || 'anon';
+        docRef = db.collection('forms').doc(fileKey).collection('sessions').doc(uid);
+      } catch (e) {
+        console.error('Firebase init/auth failed:', e);
+      }
+    }
+
+    async function loadValuesFromFirestore() {
+      if (!docRef) return;
+      try {
+        const snap = await docRef.get();
+        if (snap.exists) {
+          const data = snap.data();
+          values = data?.values || {};
+          applyValuesToDom();
+        }
+      } catch (e) {
+        console.warn('Load Firestore values failed:', e);
+      }
+    }
+
+    async function saveValuesToFirestore() {
+      if (!docRef) return;
+      try {
+        // merge so future fields are preserved
+        await docRef.set({
+          values,
+          fileKey,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      } catch (e) {
+        console.warn('Save to Firestore failed:', e);
+      }
+    }
+
     function autoSaveValues() {
       clearTimeout(autoSaveValues._t);
-      autoSaveValues._t = setTimeout(() => {
+      autoSaveValues._t = setTimeout(async () => {
+        // local backup
         localStorage.setItem('values:' + fileKey, JSON.stringify(values));
+        // cloud save
+        await saveValuesToFirestore();
         showSavedBadge();
       }, 400);
+    }
+
+    function applyValuesToDom() {
+      document.querySelectorAll('.box').forEach(tb => {
+        const k = tb.dataset.name || '';
+        if (k && Object.prototype.hasOwnProperty.call(values, k)) {
+          const current = tb.textContent || '';
+          const next = values[k] || '';
+          if (current !== next) tb.textContent = next;
+        }
+      });
     }
 
     importAnchorsInput.addEventListener('change', async (e) => {
@@ -623,7 +703,7 @@
       }
     });
 
-    // ===== Enhanced Text Wrapping =====
+    // ===== Enhanced Text Wrapping for PDF export =====
     function wrapTextBlocks(text) {
       return text.replace(/\r/g, '').split('\n');
     }
@@ -822,6 +902,9 @@
         toggleToolbarBtn.textContent = 'Hide Toolbar';
       }
 
+      // Firebase init + session doc
+      await ensureFirebase();
+
       // Try to load anchors.json
       try {
         const p = await fetch('https://raw.githubusercontent.com/nuhadwrk/admission/main/anchors.json', { cache: 'no-store' });
@@ -832,10 +915,25 @@
       } catch (e) {
         console.warn('No anchors.json found or failed to load:', e);
       }
+
+      // Load values from Firestore BEFORE rendering, so boxes get filled
+      await loadValuesFromFirestore();
+
       await loadPdf();
+
       // Initial mode setup
       fontSizeSel.disabled = modeSel.value !== 'design';
       lineHeightSel.disabled = modeSel.value !== 'design';
+
+      // Also merge any local backup values (last-write-wins to cloud)
+      try {
+        const localVals = JSON.parse(localStorage.getItem('values:' + fileKey) || '{}');
+        if (localVals && Object.keys(localVals).length) {
+          values = { ...values, ...localVals };
+          applyValuesToDom();
+          await saveValuesToFirestore();
+        }
+      } catch {}
     })();
   </script>
 </body>
