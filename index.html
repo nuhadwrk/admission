@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -99,7 +99,7 @@
       opacity: 0.7;
     }
     .box.disabled::after {
-      content: 'Click "New Admission" or "New Template" to edit';
+      content: 'Click "New Admission" or "Load As Copy" to edit';
       position: absolute;
       top: 100%;
       left: 50%;
@@ -227,7 +227,6 @@
     <button id="newAdmissionBtn" class="btn btn-primary">New Admission</button>
     <button id="newTemplateBtn" class="btn btn-primary">New Template</button>
     <button id="saveBtn" class="btn btn-primary">Save</button>
-    <button id="saveAsNewBtn" class="btn btn-primary">Save As New</button>
     <button id="printBtn" class="btn icon-btn" title="Print">
       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4H7v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H7a2 2 0 00-2 2v4h12z"></path>
@@ -262,7 +261,6 @@
     const newAdmissionBtn = document.getElementById('newAdmissionBtn');
     const newTemplateBtn = document.getElementById('newTemplateBtn');
     const saveBtn = document.getElementById('saveBtn');
-    const saveAsNewBtn = document.getElementById('saveAsNewBtn');
     const printBtn = document.getElementById('printBtn');
     const exportBtn = document.getElementById('exportBtn');
     const copyTextBtn = document.getElementById('copyTextBtn');
@@ -283,16 +281,16 @@
     let lastStageW = 0;
     let docRef = null;
     let currentAdmissionId = null;
-    let isTemplateMode = false;
     let firebaseInitialized = false;
     let isInitialRender = true;
+    let isTemplateMode = false;
 
     // ====== Firebase handles ======
     let fbApp, db;
 
     // ====== Helpers ======
     function setEnabled(enabled) {
-      [newAdmissionBtn, newTemplateBtn, saveBtn, saveAsNewBtn, printBtn, exportBtn, copyTextBtn].forEach(b => b.disabled = !enabled);
+      [newAdmissionBtn, newTemplateBtn, saveBtn, printBtn, exportBtn, copyTextBtn].forEach(b => b.disabled = !enabled);
     }
 
     function setEditable(editable) {
@@ -302,8 +300,6 @@
         tb.disabled = !editable;
       });
     }
-
-    function storageKey() { return 'anchors:' + fileKey; }
 
     function download(filename, data, type = 'application/pdf') {
       const blob = new Blob([data], { type });
@@ -547,6 +543,16 @@
         try {
           localStorage.setItem('values:' + fileKey, JSON.stringify(values));
           await saveValuesToFirestore(docRef, currentAdmissionId, isTemplateMode ? 'template' : 'admission');
+          const storageKey = isTemplateMode ? 'templates:' + fileKey : 'admissions:' + fileKey;
+          let items = JSON.parse(localStorage.getItem(storageKey) || '{}');
+          items[currentAdmissionId] = { 
+            displayId: items[currentAdmissionId]?.displayId || currentAdmissionId, 
+            type: isTemplateMode ? 'template' : 'admission', 
+            values: { ...values }, 
+            fileKey, 
+            updatedAt: new Date().toISOString() 
+          };
+          localStorage.setItem(storageKey, JSON.stringify(items));
           showSavedBadge();
         } catch (e) {
           console.error('Auto-save failed:', e);
@@ -555,8 +561,8 @@
       }, 400);
     }
 
-    function showNewAdmissionModal(isSaveAsNew = false, isTemplate = false) {
-      console.log(`Opening ${isTemplate ? 'new template' : 'new admission'} modal${isSaveAsNew ? ' (save as new)' : ''}`);
+    async function showNewAdmissionModal(isTemplate = false) {
+      console.log(`Opening ${isTemplate ? 'new template' : 'new admission'} modal`);
       overlay.classList.add('hidden');
       const modal = document.createElement('div');
       modal.className = 'modal fixed inset-0 flex items-center justify-center bg-black/50';
@@ -565,7 +571,7 @@
       content.innerHTML = `
         <h2 class="text-lg font-bold mb-4">${isTemplate ? 'New Template' : 'New Admission'}</h2>
         <label class="block mb-2 text-sm font-medium text-slate-700">Age (years)</label>
-        <input id="ageInput" type="number" min="0" class="w-full border border-slate-300 p-2 mb-2 rounded-lg focus:ring-2 focus:ring-blue-500">
+        <input id="ageInput" type="number" class="w-full border border-slate-300 p-2 mb-2 rounded-lg focus:ring-2 focus:ring-blue-500">
         <label class="block mb-2 text-sm font-medium text-slate-700">Sex</label>
         <select id="sexSelect" class="w-full border border-slate-300 p-2 mb-2 rounded-lg focus:ring-2 focus:ring-blue-500">
           <option value="M">Male</option>
@@ -608,9 +614,129 @@
             alert('All fields are required.');
             return;
           }
-          if (!/^\d+$/.test(age) || parseInt(age) < 0 || parseInt(age) > 150) {
-            console.warn('Validation failed: Invalid age');
-            alert('Age must be a number between 0 and 150.');
+          if (!/^[A-Z0-9\s]+$/.test(diagnosis)) {
+            console.warn('Validation failed: Invalid diagnosis');
+            alert('Diagnosis must be alphanumeric.');
+            return;
+          }
+          const now = new Date();
+          const day = now.getDate();
+          const month = now.getMonth() + 1;
+          const year = now.getFullYear();
+          const hours = now.getHours().toString().padStart(2, '0');
+          const minutes = now.getMinutes().toString().padStart(2, '0');
+          const displayId = `${age}y/${sex} ${diagnosis} (${day}-${month}-${year} ${hours}:${minutes})`;
+          const docId = displayId.replace(/ /g, '_').replace(/\//g, '-').replace(/[\(\)]/g, '');
+          console.log('Generated ID:', displayId, 'Doc ID:', docId);
+
+          if (firebaseInitialized && db) {
+            const newDocRef = db.collection('admissions').doc(docId);
+            console.log('Writing to Firestore at:', newDocRef.path);
+            await newDocRef.set({
+              displayId,
+              type: isTemplate ? 'template' : 'admission',
+              values: {},
+              fileKey,
+              updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            console.log(`${isTemplate ? 'Template' : 'Admission'} created in Firestore:`, docId);
+            docRef = newDocRef;
+            currentAdmissionId = docId;
+            isTemplateMode = isTemplate;
+            localStorage.setItem('currentAdmission:' + fileKey, docId);
+            values = {};
+            applyValuesToDom();
+            setEditable(true);
+            await (isTemplate ? loadTemplates() : loadAdmissions());
+          } else {
+            console.warn('Firebase not initialized, using localStorage');
+            const storageKey = isTemplate ? 'templates:' + fileKey : 'admissions:' + fileKey;
+            let items = JSON.parse(localStorage.getItem(storageKey) || '{}');
+            items[docId] = { 
+              displayId, 
+              type: isTemplate ? 'template' : 'admission', 
+              values: {}, 
+              fileKey, 
+              updatedAt: now.toISOString() 
+            };
+            localStorage.setItem(storageKey, JSON.stringify(items));
+            console.log(`${isTemplate ? 'Template' : 'Admission'} created locally:`, docId);
+            values = {};
+            currentAdmissionId = docId;
+            isTemplateMode = isTemplate;
+            localStorage.setItem('currentAdmission:' + fileKey, docId);
+            applyValuesToDom();
+            setEditable(true);
+            await (isTemplate ? loadTemplates() : loadAdmissions());
+          }
+
+          showSavedBadge(isTemplate ? 'Template Created' : 'Admission Created');
+          modal.remove();
+          console.log('Modal closed, creation successful');
+        } catch (e) {
+          console.error(`${isTemplate ? 'Template' : 'Admission'} creation failed:`, e.message, e.code || 'No code');
+          alert(`Failed to create ${isTemplate ? 'template' : 'admission'}: ` + e.message);
+        } finally {
+          await minDisplayTime;
+          createBtn.disabled = false;
+          createBtn.textContent = 'Create';
+          overlay.classList.add('hidden');
+          console.log('Create button state restored');
+        }
+      });
+    }
+
+    async function showCopyModal(sourceDocId, sourceData) {
+      console.log('Opening copy modal for:', sourceDocId);
+      overlay.classList.add('hidden');
+      const modal = document.createElement('div');
+      modal.className = 'modal fixed inset-0 flex items-center justify-center bg-black/50';
+      const content = document.createElement('div');
+      content.className = 'bg-white p-6 rounded-lg shadow-xl max-w-sm w-full';
+      content.innerHTML = `
+        <h2 class="text-lg font-bold mb-4">New Admission (Copy)</h2>
+        <label class="block mb-2 text-sm font-medium text-slate-700">Age (years)</label>
+        <input id="ageInput" type="number" class="w-full border border-slate-300 p-2 mb-2 rounded-lg focus:ring-2 focus:ring-blue-500">
+        <label class="block mb-2 text-sm font-medium text-slate-700">Sex</label>
+        <select id="sexSelect" class="w-full border border-slate-300 p-2 mb-2 rounded-lg focus:ring-2 focus:ring-blue-500">
+          <option value="M">Male</option>
+          <option value="F">Female</option>
+          <option value="O">Other</option>
+        </select>
+        <label class="block mb-2 text-sm font-medium text-slate-700">Diagnosis</label>
+        <input id="diagInput" type="text" class="w-full border border-slate-300 p-2 mb-4 rounded-lg focus:ring-2 focus:ring-blue-500">
+        <button id="createBtn" class="btn btn-primary w-full">Create Copy</button>
+        <button id="cancelBtn" class="btn w-full mt-2">Cancel</button>
+      `;
+      modal.appendChild(content);
+      document.body.appendChild(modal);
+
+      const createBtn = content.querySelector('#createBtn');
+      const cancelBtn = content.querySelector('#cancelBtn');
+      const ageInput = content.querySelector('#ageInput');
+      const sexSelect = content.querySelector('#sexSelect');
+      const diagInput = content.querySelector('#diagInput');
+
+      cancelBtn.addEventListener('click', () => {
+        console.log('Cancel button clicked, closing modal');
+        modal.remove();
+      });
+
+      createBtn.addEventListener('click', async () => {
+        console.log('Create copy button clicked');
+        createBtn.disabled = true;
+        createBtn.textContent = 'Creating...';
+        overlay.classList.remove('hidden');
+        overlay.textContent = 'Creating copy…';
+        const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
+        try {
+          const age = ageInput.value.trim();
+          const sex = sexSelect.value;
+          const diagnosis = diagInput.value.trim().toUpperCase();
+          console.log('Input values:', { age, sex, diagnosis });
+          if (!age || !sex || !diagnosis) {
+            console.warn('Validation failed: Missing required fields');
+            alert('All fields are required.');
             return;
           }
           if (!/^[A-Z0-9\s]+$/.test(diagnosis)) {
@@ -628,66 +754,53 @@
           const docId = displayId.replace(/ /g, '_').replace(/\//g, '-').replace(/[\(\)]/g, '');
           console.log('Generated ID:', displayId, 'Doc ID:', docId);
 
-          const currentValues = isSaveAsNew ? { ...values } : {};
-          if (!isSaveAsNew) {
-            values = {};
-            docRef = null;
-            currentAdmissionId = null;
-            isTemplateMode = isTemplate;
-          }
+          values = { ...sourceData.values };
+          isTemplateMode = false;
 
           if (firebaseInitialized && db) {
             const newDocRef = db.collection('admissions').doc(docId);
-            console.log('Writing to Firestore at:', newDocRef.path);
+            console.log('Writing copy to Firestore at:', newDocRef.path);
             await newDocRef.set({
               displayId,
-              type: isTemplate ? 'template' : 'admission',
-              values: currentValues,
+              type: 'admission',
+              values: { ...values },
               fileKey,
               updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             });
-            console.log(`${isTemplate ? 'Template' : 'Admission'} created in Firestore:`, docId);
-            if (!isSaveAsNew) {
-              docRef = newDocRef;
-              currentAdmissionId = docId;
-              localStorage.setItem('currentAdmission:' + fileKey, docId);
-            }
-            await (isTemplate ? loadTemplates() : loadAdmissions());
+            console.log('Admission copy created in Firestore:', docId);
+            docRef = newDocRef;
+            currentAdmissionId = docId;
+            localStorage.setItem('currentAdmission:' + fileKey, docId);
+            await loadAdmissions();
           } else {
             console.warn('Firebase not initialized, using localStorage');
-            let items = JSON.parse(localStorage.getItem(`${isTemplate ? 'templates' : 'admissions'}:${fileKey}`) || '{}');
+            let items = JSON.parse(localStorage.getItem('admissions:' + fileKey) || '{}');
             items[docId] = { 
               displayId, 
-              type: isTemplate ? 'template' : 'admission', 
-              values: currentValues, 
+              type: 'admission', 
+              values: { ...values }, 
               fileKey, 
               updatedAt: now.toISOString() 
             };
-            localStorage.setItem(`${isTemplate ? 'templates' : 'admissions'}:${fileKey}`, JSON.stringify(items));
-            console.log(`${isTemplate ? 'Template' : 'Admission'} created locally:`, docId);
-            if (!isSaveAsNew) {
-              values = currentValues;
-              currentAdmissionId = docId;
-              localStorage.setItem('currentAdmission:' + fileKey, docId);
-            }
-            await (isTemplate ? loadTemplates() : loadAdmissions());
+            localStorage.setItem('admissions:' + fileKey, JSON.stringify(items));
+            console.log('Admission copy created locally:', docId);
+            currentAdmissionId = docId;
+            localStorage.setItem('currentAdmission:' + fileKey, docId);
+            await loadAdmissions();
           }
 
-          if (!isSaveAsNew) {
-            values = currentValues;
-            applyValuesToDom();
-            setEditable(true);
-          }
-          showSavedBadge(isTemplate ? 'Template Created' : isSaveAsNew ? 'New Admission Created' : 'Admission Created');
+          applyValuesToDom();
+          setEditable(true);
+          showSavedBadge('Admission Copy Created');
           modal.remove();
-          console.log('Modal closed, creation successful');
+          console.log('Modal closed, copy creation successful');
         } catch (e) {
-          console.error(`${isTemplate ? 'Template' : 'Admission'} creation failed:`, e.message, e.code || 'No code');
-          alert(`Failed to create ${isTemplate ? 'template' : 'admission'}: ` + e.message);
+          console.error('Admission copy creation failed:', e.message, e.code || 'No code');
+          alert('Failed to create admission copy: ' + e.message);
         } finally {
           await minDisplayTime;
           createBtn.disabled = false;
-          createBtn.textContent = 'Create';
+          createBtn.textContent = 'Create Copy';
           overlay.classList.add('hidden');
           console.log('Create button state restored');
         }
@@ -716,7 +829,7 @@
           admissionsList.innerHTML = '<p class="text-slate-500">No admissions yet.</p>';
         } else {
           Object.entries(admissions)
-            .filter(([_, data]) => data.type !== 'template')
+            .filter(([_, data]) => data.type === 'admission')
             .forEach(([id, data]) => {
               const card = document.createElement('div');
               card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
@@ -725,6 +838,7 @@
                 <p class="text-xs text-slate-500">Updated: ${new Date(data.updatedAt).toLocaleString()}</p>
                 <div class="mt-2 flex gap-2">
                   <button class="load-btn btn btn-primary">Load</button>
+                  <button class="copy-btn btn">Load As Copy</button>
                   <button class="delete-btn btn">Delete</button>
                 </div>
               `;
@@ -737,8 +851,8 @@
                   values = { ...data.values } || {};
                   applyValuesToDom();
                   setEditable(true);
-                  isTemplateMode = false;
                   currentAdmissionId = id;
+                  isTemplateMode = false;
                   localStorage.setItem('currentAdmission:' + fileKey, id);
                   if (firebaseInitialized && db) {
                     docRef = db.collection('admissions').doc(id);
@@ -757,6 +871,10 @@
                   await minDisplayTime;
                   overlay.classList.add('hidden');
                 }
+              });
+              card.querySelector('.copy-btn').addEventListener('click', async () => {
+                console.log('Load as copy for admission:', id);
+                showCopyModal(id, data);
               });
               card.querySelector('.delete-btn').addEventListener('click', async () => {
                 console.log('Delete button clicked for admission:', id);
@@ -798,7 +916,7 @@
         return;
       }
       try {
-        const admissionsCol = db.collection('admissions').where('type', '!=', 'template');
+        const admissionsCol = db.collection('admissions').where('type', '==', 'admission');
         console.log('Loading admissions from Firestore');
         const snap = await admissionsCol.get();
         if (snap.empty) {
@@ -813,6 +931,7 @@
             <p class="text-xs text-slate-500">Updated: ${data.updatedAt?.toDate()?.toLocaleString() || 'N/A'}</p>
             <div class="mt-2 flex gap-2">
               <button class="load-btn btn btn-primary">Load</button>
+              <button class="copy-btn btn">Load As Copy</button>
               <button class="delete-btn btn">Delete</button>
             </div>
           `;
@@ -823,9 +942,9 @@
             const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
             try {
               docRef = doc.ref;
+              isTemplateMode = false;
               await loadValuesFromFirestore(doc.ref);
               setEditable(true);
-              isTemplateMode = false;
               currentAdmissionId = doc.id;
               localStorage.setItem('currentAdmission:' + fileKey, doc.id);
               try {
@@ -842,6 +961,10 @@
               await minDisplayTime;
               overlay.classList.add('hidden');
             }
+          });
+          card.querySelector('.copy-btn').addEventListener('click', async () => {
+            console.log('Load as copy for admission:', doc.id);
+            showCopyModal(doc.id, data);
           });
           card.querySelector('.delete-btn').addEventListener('click', async () => {
             console.log('Delete button clicked for admission:', doc.id);
@@ -919,38 +1042,12 @@
                 </div>
               `;
               card.querySelector('.load-btn').addEventListener('click', async () => {
-                console.log('Loading template:', id);
-                overlay.classList.remove('hidden');
-                overlay.textContent = 'Loading template…';
-                const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
-                try {
-                  values = { ...data.values } || {};
-                  applyValuesToDom();
-                  setEditable(true);
-                  isTemplateMode = true;
-                  currentAdmissionId = id;
-                  localStorage.setItem('currentAdmission:' + fileKey, id);
-                  if (firebaseInitialized && db) {
-                    docRef = db.collection('admissions').doc(id);
-                  }
-                  try {
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  } catch (e) {
-                    console.warn('Smooth scroll failed:', e);
-                    window.scroll(0, 0);
-                  }
-                  console.log('Template loaded:', id);
-                } catch (e) {
-                  console.error('Failed to load template:', e);
-                  alert('Failed to load template: ' + e.message);
-                } finally {
-                  await minDisplayTime;
-                  overlay.classList.add('hidden');
-                }
+                console.log('Loading template as copy:', id);
+                showCopyModal(id, data);
               });
               card.querySelector('.delete-btn').addEventListener('click', async () => {
                 console.log('Delete button clicked for template:', id);
-                if (id === currentAdmissionId) {
+                if (id === currentAdmissionId && isTemplateMode) {
                   console.warn('Cannot delete active template:', id);
                   alert('Cannot delete the active template. Load another template or admission first.');
                   return;
@@ -1007,35 +1104,12 @@
             </div>
           `;
           card.querySelector('.load-btn').addEventListener('click', async () => {
-            console.log('Loading template:', doc.id);
-            overlay.classList.remove('hidden');
-            overlay.textContent = 'Loading template…';
-            const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
-            try {
-              await loadValuesFromFirestore(doc.ref);
-              setEditable(true);
-              isTemplateMode = true;
-              currentAdmissionId = doc.id;
-              docRef = doc.ref;
-              localStorage.setItem('currentAdmission:' + fileKey, doc.id);
-              try {
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              } catch (e) {
-                console.warn('Smooth scroll failed:', e);
-                window.scroll(0, 0);
-              }
-              console.log('Template loaded:', doc.id);
-            } catch (e) {
-              console.error('Failed to load template:', e);
-              alert('Failed to load template: ' + e.message);
-            } finally {
-              await minDisplayTime;
-              overlay.classList.add('hidden');
-            }
+            console.log('Loading template as copy:', doc.id);
+            showCopyModal(doc.id, data);
           });
           card.querySelector('.delete-btn').addEventListener('click', async () => {
             console.log('Delete button clicked for template:', doc.id);
-            if (doc.id === currentAdmissionId) {
+            if (doc.id === currentAdmissionId && isTemplateMode) {
               console.warn('Cannot delete active template:', doc.id);
               alert('Cannot delete the active template. Load another template or admission first.');
               return;
@@ -1206,8 +1280,18 @@
         const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
         localStorage.setItem('values:' + fileKey, JSON.stringify(values));
         await saveValuesToFirestore(docRef, currentAdmissionId, isTemplateMode ? 'template' : 'admission');
-        showSavedBadge();
+        const storageKey = isTemplateMode ? 'templates:' + fileKey : 'admissions:' + fileKey;
+        let items = JSON.parse(localStorage.getItem(storageKey) || '{}');
+        items[currentAdmissionId] = { 
+          displayId: items[currentAdmissionId]?.displayId || currentAdmissionId, 
+          type: isTemplateMode ? 'template' : 'admission', 
+          values: { ...values }, 
+          fileKey, 
+          updatedAt: new Date().toISOString() 
+        };
+        localStorage.setItem(storageKey, JSON.stringify(items));
         await (isTemplateMode ? loadTemplates() : loadAdmissions());
+        showSavedBadge();
         await minDisplayTime;
       } catch (e) {
         console.error('Save failed:', e);
@@ -1224,13 +1308,9 @@
     });
     newTemplateBtn.addEventListener('click', () => {
       console.log('New template button clicked');
-      showNewAdmissionModal(false, true);
-    });
-    saveBtn.addEventListener('click', doSave);
-    saveAsNewBtn.addEventListener('click', () => {
-      console.log('Save as new button clicked');
       showNewAdmissionModal(true);
     });
+    saveBtn.addEventListener('click', doSave);
     printBtn.addEventListener('click', doPrint);
     exportBtn.addEventListener('click', doExport);
     copyTextBtn.addEventListener('click', copyFormText);
