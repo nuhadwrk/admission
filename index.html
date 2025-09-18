@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Admission Form — Fill + Designer</title>
+  <title>Admission Form</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -13,96 +13,56 @@
   <script>pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
   <!-- pdf-lib (exact vector export/print) -->
   <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
-  
-  <!-- Firebase (compat for simplicity) -->
+  <!-- Firebase (compat for simplicity, no auth) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
 
   <style>
     :root { --ring: rgba(59,130,246,.35); }
     html, body { height: 100%; margin: 0; }
-    body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, 'Helvetica Neue', Arial; background: #f8fafc; }
-
-    #chrome { max-width: 1100px; margin: 0 auto; padding: clamp(4px, 1vw, 8px); }
-
-    #toolbar { 
-      position: sticky; 
-      top: 0; 
+    body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, 'Helvetica Neue', Arial; background: #f5f7fa; }
+    #chrome { max-width: 1100px; margin: 0 auto; padding: clamp(8px, 2vw, 16px); }
+    #actionBar { 
+      position: fixed; 
+      bottom: 16px; 
+      right: 16px; 
       z-index: 50; 
       display: flex; 
-      flex-wrap: wrap; 
-      gap: .25rem; 
-      align-items: center; 
-      padding: .3rem; 
-      background: rgba(255,255,255,.96); 
+      gap: 8px; 
+      padding: 8px; 
+      background: rgba(255,255,255,0.95); 
       border: 1px solid #e5e7eb; 
-      border-radius: 10px; 
-      box-shadow: 0 4px 20px rgba(0,0,0,.08); 
-      transition: transform 0.3s ease; 
+      border-radius: 12px; 
+      box-shadow: 0 4px 16px rgba(0,0,0,0.1); 
     }
-    #toolbar.hidden { transform: translateY(-100%); }
-
-    #toggleToolbarBtn { 
-      position: sticky; 
-      top: 0; 
-      z-index: 51; 
-      margin: 4px auto; 
-      padding: .4rem .8rem; 
-      background: #2563eb; 
-      color: #fff; 
-      border: 1px solid #1d4ed8; 
-      border-radius: 10px; 
-      font-size: .9rem; 
-      font-weight: 600; 
-      cursor: pointer; 
-      touch-action: manipulation; 
-    }
-
     .btn { 
       display: inline-flex; 
       align-items: center; 
       justify-content: center; 
-      gap: .3rem; 
-      padding: .4rem .6rem; 
+      gap: 6px; 
+      padding: 8px 12px; 
       border: 1px solid #e5e7eb; 
       border-radius: 8px; 
       background: #fff; 
-      color: #0f172a; 
+      color: #1e293b; 
       font-weight: 600; 
-      font-size: .85rem; 
+      font-size: 14px; 
+      transition: background-color 0.2s, transform 0.1s; 
       touch-action: manipulation; 
-      pointer-events: auto; 
     }
     .btn-primary { background: #2563eb; color: #fff; border-color: #1d4ed8; }
-
-    .select-container {
-      display: flex;
-      align-items: center; 
-      gap: .3rem; 
-      border: 1px solid #e5e7eb; 
-      border-radius: 8px; 
-      background: #fff; 
-      padding: .3rem .6rem; 
-      font-size: .85rem; 
-      min-height: 30px; /* Larger tap area */
-    }
-    select { 
-      outline: none; 
-      background: transparent; 
-      font-size: .85rem; 
-      padding: .2rem; 
-      touch-action: manipulation; 
-      pointer-events: auto; 
-      min-width: 50px; /* Easier to tap */
-    }
-
+    .btn:hover { background: #f1f5f9; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .icon-btn { padding: 8px; }
     #stage { 
       background: #fff; 
       border: 1px solid #e5e7eb; 
       border-radius: 16px; 
-      padding: clamp(4px, 1vw, 8px); 
-      margin-top: 4px; 
+      padding: clamp(8px, 2vw, 12px); 
+      margin-bottom: 16px; 
+      position: relative; 
+      z-index: 10; 
     }
     #pages { 
       display: flex; 
@@ -110,43 +70,97 @@
       gap: clamp(8px, 1.5vw, 12px); 
       align-items: center; 
       padding-bottom: 16px; 
+      position: relative; 
+      z-index: 15; 
     }
-
     .page { position: relative; }
-    .page canvas { display: block; border-radius: 0; box-shadow: 0 4px 12px rgba(0,0,0,.06); }
-
+    .page canvas { display: block; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
     .box { 
       position: absolute; 
       background: transparent; 
-      color: #0f172a; 
+      color: #1e293b; 
       min-width: 25px; 
       min-height: 16px; 
-      border-radius: 5px; 
+      border-radius: 4px; 
       padding: 2px 4px; 
       line-height: 1.2; 
       outline: none; 
       overflow: hidden; 
-      white-space: pre-wrap; 
+      white-space: pre-line; 
       -webkit-user-select: text; 
       user-select: text; 
       font-size: clamp(10px, 2.5vw, 12px); 
       touch-action: manipulation; 
     }
-    body.design .box { resize: both; border: 1px dashed transparent; }
-    body.design .box.sel { border-color: #3b82f6; box-shadow: 0 0 0 3px var(--ring); background: rgba(255,255,255,.9); }
-    body:not(.design) .box { resize: none; }
-    .box:focus { box-shadow: 0 0 0 3px var(--ring); background: transparent; }
-
+    .box:focus { box-shadow: 0 0 0 3px var(--ring); }
+    .box.disabled {
+      background: #f1f5f9;
+      cursor: not-allowed;
+      opacity: 0.7;
+    }
+    .box.disabled::after {
+      content: 'Click "New Admission" or "New Template" to edit';
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1e293b;
+      color: #fff;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      white-space: nowrap;
+      display: none;
+    }
+    .box.disabled:hover::after {
+      display: block;
+    }
     #saveBadge { 
-      position: absolute; 
-      top: 0; 
-      right: 10px; 
-      text-xs px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200; 
+      position: fixed; 
+      bottom: 80px; 
+      right: 16px; 
+      z-index: 60; 
+      font-size: 14px; 
+      padding: 6px 12px; 
+      border-radius: 12px; 
+      background: #ecfdf5; 
+      color: #065f46; 
+      border: 1px solid #d1fae5; 
       opacity: 0; 
       transition: opacity 0.3s ease; 
     }
     #saveBadge.visible { opacity: 1; }
-
+    #overlay {
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.9);
+      font-size: 16px;
+      font-weight: 600;
+    }
+    #overlay::before {
+      content: '';
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      border: 3px solid #ccc;
+      border-top-color: #2563eb;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-right: 8px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .modal { 
+      z-index: 2000;
+    }
+    #admissionsSection, #templatesSection { 
+      background: #fff; 
+      border: 1px solid #e5e7eb; 
+      border-radius: 16px; 
+      padding: 16px; 
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05); 
+      margin-bottom: 16px;
+    }
     @media print { 
       body { background: #fff; } 
       #chrome > *:not(#stage) { display: none !important; } 
@@ -154,143 +168,87 @@
       .page canvas { box-shadow: none; } 
     }
     @media (max-width: 640px) {
-      #chrome { padding: 4px; }
-      #toolbar { 
-        flex-direction: column; 
-        align-items: stretch; 
-        padding: .2rem; 
-        gap: .1rem; 
+      #chrome { padding: 8px; }
+      #actionBar { 
+        left: 8px; 
+        right: 8px; 
+        bottom: 8px; 
         border-radius: 8px; 
+        padding: 6px; 
+        flex-wrap: wrap;
       }
-      .btn { 
-        padding: .3rem .5rem; 
-        font-size: .8rem; 
-      }
-      .select-container {
-        padding: .2rem .5rem; 
-        font-size: .8rem; 
-        min-height: 35px; /* Larger for touch */
-      }
-      select { 
-        font-size: .8rem; 
-        padding: .15rem; 
-        min-width: 60px; 
-      }
-      /* Hide non-essential controls by default, show in expanded mode */
-      #delFieldBtn, #dupFieldBtn, #fieldName, #applyNameBtn, 
-      #saveAnchorsBtn, #loadAnchorsBtn, #importAnchorsInput, #exportAnchorsBtn { 
-        display: none; 
-      }
-      #toolbar.expanded #delFieldBtn, #toolbar.expanded #dupFieldBtn, 
-      #toolbar.expanded #fieldName, #toolbar.expanded #applyNameBtn, 
-      #toolbar.expanded #exportAnchorsBtn { 
-        display: flex; 
-      }
-      #fieldName { width: 6rem; }
-      #stage { 
-        padding: 4px; 
-        margin-top: 2px; 
-        border-radius: 12px; 
-      }
-      .page canvas { box-shadow: 0 2px 8px rgba(0,0,0,.05); }
+      .btn { padding: 6px 10px; font-size: 12px; }
+      .icon-btn { padding: 6px; }
+      #stage { padding: 4px; border-radius: 12px; }
       .box { 
         min-width: 20px; 
         min-height: 14px; 
         padding: 2px 3px; 
         font-size: clamp(8px, 2vw, 10px); 
       }
-      #toggleToolbarBtn { 
-        display: block; /* Always show on mobile */
+      #saveBadge { 
+        bottom: 64px; 
+        font-size: 12px; 
+        padding: 4px 8px; 
       }
-      body.design .box { 
-        resize: both; 
-        min-width: 40px; /* Larger touch target for resize */
-        min-height: 30px; 
-      }
-      body.design .box::after { 
-        content: ''; 
-        position: absolute; 
-        bottom: 0; 
-        right: 0; 
-        width: 20px; 
-        height: 20px; 
-        cursor: nwse-resize; 
-        touch-action: none; 
-      }
+      #admissionsSection, #templatesSection { padding: 12px; border-radius: 12px; }
     }
   </style>
 </head>
-<body class="fill min-h-screen">
-  <div id="chrome" class="space-y-2">
-    <header class="text-center">
-      <h1 class="text-xl font-extrabold tracking-tight text-slate-900">Admission Form</h1>
-      <p class="text-slate-600 text-xs">Mobile-first form filler with designer</p>
+<body class="min-h-screen">
+  <div id="chrome" class="space-y-4">
+    <header class="text-center pt-4">
+      <h1 class="text-2xl font-bold text-slate-900">Admission Form</h1>
+      <p class="text-slate-600 text-sm">Fill and manage admission forms and templates</p>
     </header>
 
-    <div id="toolbar">
-      <div class="select-container">
-        <span class="text-slate-600">Mode</span>
-        <select id="modeSel" class="outline-none bg-transparent">
-          <option value="fill" selected>Fill</option>
-          <option value="design">Design</option>
-        </select>
+    <div id="stage" class="relative rounded-2xl border border-slate-200 bg-white">
+      <div id="pages" class="relative">
+        <div id="overlay" class="absolute inset-0 flex items-center justify-center text-slate-600 bg-white/70 rounded-2xl">Loading…</div>
       </div>
-
-      <button id="addFieldBtn" class="btn" title="Add field; tap page to place">+ Field</button>
-      <button id="delFieldBtn" class="btn" title="Delete selected">Delete</button>
-      <button id="dupFieldBtn" class="btn" title="Duplicate selected">Duplicate</button>
-
-      <div class="select-container">
-        <span class="text-slate-600">Font pt</span>
-        <select id="fontSizeSel" class="outline-none bg-transparent">
-          <option>8</option><option>10</option><option>12</option>
-          <option selected>14</option><option>16</option><option>18</option><option>20</option>
-        </select>
-      </div>
-      <div class="select-container">
-        <span class="text-slate-600">Line</span>
-        <select id="lineHeightSel" class="outline-none bg-transparent">
-          <option>1.0</option><option>1.1</option><option selected>1.2</option>
-          <option>1.3</option><option>1.4</option><option>1.5</option><option>1.6</option><option>1.8</option><option>2.0</option>
-        </select>
-      </div>
-      <div class="flex items-center gap-1 border border-slate-200 rounded-lg bg-white px-1.5 py-0.5 text-xs">
-        <span class="text-slate-600">Name</span>
-        <input id="fieldName" class="w-24 outline-none" placeholder="patient_name" />
-        <button id="applyNameBtn" class="btn">Apply</button>
-      </div>
-
-      <div class="w-px h-5 bg-slate-200 mx-1"></div>
-
-      <button id="saveAnchorsBtn" class="btn" title="Save anchors (browser)">Save</button>
-      <button id="loadAnchorsBtn" class="btn" title="Load anchors (browser)">Load</button>
-      <button id="exportAnchorsBtn" class="btn btn-primary" title="Download anchors JSON">Export JSON</button>
-      <label class="btn" id="importAnchorsInput" title="Import anchors JSON">
-        <input type="file" accept="application/json" class="hidden" />
-        Import JSON
-      </label>
-
-      <div class="w-px h-5 bg-slate-200 mx-1"></div>
-
-      <button id="printBtn" class="btn" title="Print">Print</button>
-      <button id="exportBtn" class="btn btn-primary" title="Export filled PDF">Export PDF</button>
-
-      <span id="saveBadge" class="ml-auto text-xs px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 hidden">Saved</span>
     </div>
 
-    <button id="toggleToolbarBtn">Show Toolbar</button>
+    <div id="admissionsSection">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-bold text-slate-900">Admissions</h2>
+      </div>
+      <div id="admissionsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    </div>
 
-    <div id="stage" class="relative rounded-2xl border border-slate-200 bg-white">
-      <div id="pages"></div>
-      <div id="overlay" class="absolute inset-0 flex items-center justify-center text-slate-600 bg-white/70 rounded-2xl">Loading…</div>
+    <div id="templatesSection">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-bold text-slate-900">Templates</h2>
+      </div>
+      <div id="templatesList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
     </div>
   </div>
+
+  <div id="actionBar">
+    <button id="newAdmissionBtn" class="btn btn-primary">New Admission</button>
+    <button id="newTemplateBtn" class="btn btn-primary">New Template</button>
+    <button id="saveBtn" class="btn btn-primary">Save</button>
+    <button id="saveAsNewBtn" class="btn btn-primary">Save As New</button>
+    <button id="printBtn" class="btn icon-btn" title="Print">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4H7v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H7a2 2 0 00-2 2v4h12z"></path>
+      </svg>
+    </button>
+    <button id="exportBtn" class="btn icon-btn" title="Download PDF">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+      </svg>
+    </button>
+    <button id="copyTextBtn" class="btn icon-btn" title="Copy Text">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
+      </svg>
+    </button>
+  </div>
+  <span id="saveBadge" class="hidden">Saved</span>
 
   <script>
     // ====== CONFIG ======
     const PDF_URL = 'https://raw.githubusercontent.com/nuhadwrk/admission/main/Admission.pdf';
-
-    // Firebase Config (provided)
     const firebaseConfig = {
       apiKey: "AIzaSyCVX1eynTqjloTeEOUNPZ4ctn99VkMXAhU",
       authDomain: "admission-8236a.firebaseapp.com",
@@ -301,60 +259,53 @@
     };
 
     // ====== Elements ======
-    const modeSel = document.getElementById('modeSel');
-    const addFieldBtn = document.getElementById('addFieldBtn');
-    const delFieldBtn = document.getElementById('delFieldBtn');
-    const dupFieldBtn = document.getElementById('dupFieldBtn');
-    const fontSizeSel = document.getElementById('fontSizeSel');
-    const lineHeightSel = document.getElementById('lineHeightSel');
-    const fieldNameInput = document.getElementById('fieldName');
-    const applyNameBtn = document.getElementById('applyNameBtn');
-    const saveAnchorsBtn = document.getElementById('saveAnchorsBtn');
-    const loadAnchorsBtn = document.getElementById('loadAnchorsBtn');
-    const exportAnchorsBtn = document.getElementById('exportAnchorsBtn');
-    const importAnchorsInput = document.querySelector('#importAnchorsInput input');
+    const newAdmissionBtn = document.getElementById('newAdmissionBtn');
+    const newTemplateBtn = document.getElementById('newTemplateBtn');
+    const saveBtn = document.getElementById('saveBtn');
+    const saveAsNewBtn = document.getElementById('saveAsNewBtn');
     const printBtn = document.getElementById('printBtn');
     const exportBtn = document.getElementById('exportBtn');
-    const toggleToolbarBtn = document.getElementById('toggleToolbarBtn');
-    const toolbar = document.getElementById('toolbar');
+    const copyTextBtn = document.getElementById('copyTextBtn');
     const stage = document.getElementById('stage');
     const pagesRoot = document.getElementById('pages');
     const overlay = document.getElementById('overlay');
     const saveBadge = document.getElementById('saveBadge');
+    const admissionsList = document.getElementById('admissionsList');
+    const templatesList = document.getElementById('templatesList');
 
     // ====== State ======
     let pdfDoc = null;
     let fileKey = 'Admission';
-    let adding = false;
-    let selected = null;
     let anchorsByPage = {};
     let values = {};
     let currentScale = 1;
     let currentDPR = Math.min(window.devicePixelRatio || 1, 1.5);
     let lastStageW = 0;
+    let docRef = null;
+    let currentAdmissionId = null;
+    let isTemplateMode = false;
+    let firebaseInitialized = false;
+    let isInitialRender = true;
 
     // ====== Firebase handles ======
-    let fbApp, auth, db, docRef, uid = 'anon';
-
-    // ====== Toolbar Toggle ======
-    function toggleToolbar() {
-      toolbar.classList.toggle('hidden');
-      toolbar.classList.toggle('expanded', !toolbar.classList.contains('hidden'));
-      toggleToolbarBtn.textContent = toolbar.classList.contains('hidden') ? 'Show Toolbar' : 'Hide Toolbar';
-      localStorage.setItem('toolbarState:' + fileKey, toolbar.classList.contains('hidden') ? 'hidden' : 'visible');
-    }
-
-    toggleToolbarBtn.addEventListener('click', toggleToolbar);
+    let fbApp, db;
 
     // ====== Helpers ======
     function setEnabled(enabled) {
-      [addFieldBtn, delFieldBtn, dupFieldBtn, saveAnchorsBtn, loadAnchorsBtn, exportAnchorsBtn, printBtn, exportBtn, applyNameBtn].forEach(b => b.disabled = !enabled);
-      refreshBoxesInteractivity();
+      [newAdmissionBtn, newTemplateBtn, saveBtn, saveAsNewBtn, printBtn, exportBtn, copyTextBtn].forEach(b => b.disabled = !enabled);
+    }
+
+    function setEditable(editable) {
+      document.querySelectorAll('.box').forEach(tb => {
+        tb.contentEditable = editable;
+        tb.classList.toggle('disabled', !editable);
+        tb.disabled = !editable;
+      });
     }
 
     function storageKey() { return 'anchors:' + fileKey; }
 
-    function download(filename, data, type = 'application/json') {
+    function download(filename, data, type = 'application/pdf') {
       const blob = new Blob([data], { type });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -363,29 +314,65 @@
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     }
 
-    function showSavedBadge() {
+    function showSavedBadge(message = 'Saved') {
+      saveBadge.textContent = message;
       saveBadge.classList.add('visible');
       clearTimeout(showSavedBadge._t);
-      showSavedBadge._t = setTimeout(() => saveBadge.classList.remove('visible'), 1200);
+      showSavedBadge._t = setTimeout(() => {
+        saveBadge.textContent = 'Saved';
+        saveBadge.classList.remove('visible');
+      }, 1200);
     }
 
-    function getLineHeightRatio(el) {
-      const inline = parseFloat(el.style.lineHeight);
-      if (!isNaN(inline) && inline > 0) return inline;
-      const cs = getComputedStyle(el);
-      const lhPx = parseFloat(cs.lineHeight);
-      const fsPx = parseFloat(cs.fontSize) || 14;
-      return !isNaN(lhPx) && !isNaN(fsPx) && fsPx > 0 ? lhPx / fsPx : 1.2;
-    }
+    function copyFormText() {
+      const fieldOrder = [
+        { key: 'complains', order: 1 },
+        { key: 'hopi', order: 2 },
+        { key: 'pasthx', order: 3 },
+        { key: 'personalhx', order: 4 },
+        { key: 'fhx', order: 5 },
+        { key: 'obs', order: 6 },
+        { key: 'ge', order: 7 },
+        { key: 'cvs', order: 8 },
+        { key: 'rs', order: 9 },
+        { key: 'pa', order: 10 },
+        { key: 'pelvis', order: 11 },
+        { key: 'cns', order: 12 },
+        { key: 'le', order: 13 },
+        { key: 'txhx', order: 14 },
+        { key: 'provdx', order: 15 },
+        { key: 'dx', order: 16 },
+        { key: 'management', order: 17 },
+        { key: 'management2', order: 18 }
+      ];
 
-    function refreshBoxesInteractivity() {
-      document.querySelectorAll('.box').forEach(tb => {
-        tb.style.resize = (modeSel.value === 'design') ? 'both' : 'none';
-      });
+      const text = fieldOrder
+        .sort((a, b) => a.order - b.order)
+        .filter(field => values[field.key] && values[field.key].toString().trim())
+        .map(field => values[field.key].toString().trim())
+        .join('\n');
+
+      if (!text) {
+        alert('No text to copy.');
+        return;
+      }
+      if (!navigator.clipboard) {
+        alert('Clipboard API not supported in this browser.');
+        return;
+      }
+      navigator.clipboard.writeText(text)
+        .then(() => {
+          showSavedBadge('Text Copied');
+        })
+        .catch(e => {
+          console.error('Copy to clipboard failed:', e);
+          alert('Failed to copy text: ' + e.message);
+        });
     }
 
     // ====== Scale + Render ======
     async function renderAllPages() {
+      console.log('Rendering pages');
       const cs = getComputedStyle(stage);
       const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
       const stageWExact = Math.max(stage.clientWidth - padX, 280);
@@ -393,38 +380,53 @@
       lastStageW = stageWExact;
 
       pagesRoot.innerHTML = '';
-      const page1 = await pdfDoc.getPage(1);
-      const v1 = page1.getViewport({ scale: 1 });
-      currentScale = stageWExact / v1.width;
-      currentDPR = Math.min(window.devicePixelRatio || 1, 1.5);
+      overlay.classList.remove('hidden');
+      overlay.textContent = 'Rendering pages…';
+      try {
+        const page1 = await pdfDoc.getPage(1);
+        const v1 = page1.getViewport({ scale: 1 });
+        currentScale = stageWExact / v1.width;
+        currentDPR = Math.min(window.devicePixelRatio || 1, 1.5);
 
-      for (let p = 1; p <= pdfDoc.numPages; p++) {
-        const page = await pdfDoc.getPage(p);
-        const vpCSS = page.getViewport({ scale: currentScale });
-        const vpHiDPI = page.getViewport({ scale: currentScale * currentDPR });
+        for (let p = 1; p <= pdfDoc.numPages; p++) {
+          const page = await pdfDoc.getPage(p);
+          const vpCSS = page.getViewport({ scale: currentScale });
+          const vpHiDPI = page.getViewport({ scale: currentScale * currentDPR });
 
-        const pageWrap = document.createElement('div');
-        pageWrap.className = 'page';
-        pageWrap.dataset.page = String(p);
-        pageWrap.style.width = vpCSS.width + 'px';
-        pageWrap.style.height = vpCSS.height + 'px';
+          const pageWrap = document.createElement('div');
+          pageWrap.className = 'page';
+          pageWrap.dataset.page = String(p);
+          pageWrap.style.width = vpCSS.width + 'px';
+          pageWrap.style.height = vpCSS.height + 'px';
 
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = Math.round(vpHiDPI.width);
-        canvas.height = Math.round(vpHiDPI.height);
-        canvas.style.width = vpCSS.width + 'px';
-        canvas.style.height = vpCSS.height + 'px';
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          canvas.width = Math.round(vpHiDPI.width);
+          canvas.height = Math.round(vpHiDPI.height);
+          canvas.style.width = vpCSS.width + 'px';
+          canvas.style.height = vpCSS.height + 'px';
 
-        pageWrap.appendChild(canvas);
-        pagesRoot.appendChild(pageWrap);
-        await page.render({ canvasContext: ctx, viewport: vpHiDPI }).promise;
+          pageWrap.appendChild(canvas);
+          pagesRoot.appendChild(pageWrap);
+          await page.render({ canvasContext: ctx, viewport: vpHiDPI }).promise;
 
-        (anchorsByPage[p] || []).forEach(a => spawnBox(p, a));
+          (anchorsByPage[p] || []).forEach(a => spawnBox(p, a));
+        }
+        if (!isInitialRender) applyValuesToDom();
+        setEditable(!!docRef);
+      } catch (e) {
+        console.error('Render pages failed:', e);
+        overlay.textContent = 'Failed to render pages. Click to retry.';
+        overlay.style.cursor = 'pointer';
+        overlay.addEventListener('click', () => {
+          overlay.style.cursor = 'auto';
+          renderAllPages();
+        }, { once: true });
+      } finally {
+        overlay.classList.add('hidden');
+        isInitialRender = false;
+        console.log('Overlay hidden after rendering');
       }
-      overlay?.remove?.();
-      refreshBoxesInteractivity();
-      applyValuesToDom(); // ensure freshly loaded values appear
     }
 
     function toScreen(a, cw, ch) {
@@ -436,7 +438,7 @@
       if (!pageWrap) return;
       const tb = document.createElement('div');
       tb.className = 'box';
-      tb.contentEditable = true;
+      tb.contentEditable = !!docRef;
       tb.dataset.page = String(pageNo);
       tb.dataset.name = a.name || '';
 
@@ -449,258 +451,628 @@
       tb.style.top = s.top + 'px';
       tb.style.width = s.width + 'px';
       tb.style.height = s.height + 'px';
-      tb.textContent = values[a.name || ''] || '';
+      tb.innerText = isInitialRender ? '' : (values[a.name || ''] || '');
 
       tb.addEventListener('input', () => {
         const k = tb.dataset.name;
-        if (k) values[k] = tb.textContent;
-        autoSaveValues();
+        if (k) values[k] = tb.innerText;
+        if (docRef) autoSaveValues();
       });
-
-      tb.addEventListener('pointerdown', (e) => {
-        if (modeSel.value !== 'design') return;
-        tb.classList.add('sel');
-        selected = tb;
-        tb.setPointerCapture(e.pointerId);
-        tb._drag = true;
-        tb._sx = e.clientX;
-        tb._sy = e.clientY;
-        tb._sl = parseFloat(tb.style.left) || 0;
-        tb._st = parseFloat(tb.style.top) || 0;
-        fieldNameInput.value = tb.dataset.name || '';
-        fontSizeSel.value = String(Math.round(fpt));
-        lineHeightSel.value = (Math.round(getLineHeightRatio(tb) * 10) / 10).toFixed(1);
-      });
-      tb.addEventListener('pointermove', (e) => {
-        if (modeSel.value !== 'design' || !tb._drag) return;
-        const dx = e.clientX - tb._sx, dy = e.clientY - tb._sy;
-        tb.style.left = (tb._sl + dx) + 'px';
-        tb.style.top = (tb._st + dy) + 'px';
-      });
-      tb.addEventListener('pointerup', () => { tb._drag = false; autoSaveAnchors(); });
-      tb.addEventListener('click', (e) => e.stopPropagation());
       tb.addEventListener('blur', () => {
         const k = tb.dataset.name;
-        if (k) values[k] = tb.textContent;
-        autoSaveValues();
+        if (k) values[k] = tb.innerText;
+        if (docRef) autoSaveValues();
       });
 
       pageWrap.appendChild(tb);
       return tb;
     }
 
-    function getAnchorsFromDom() {
-      const out = {};
-      [...pagesRoot.children].forEach(pageWrap => {
-        const p = parseInt(pageWrap.dataset.page);
-        const cw = pageWrap.clientWidth, ch = pageWrap.clientHeight;
-        const list = [...pageWrap.querySelectorAll('.box')].map(tb => {
-          const fpt = parseFloat(tb.style.fontSize) / currentScale || 14;
-          return {
-            name: tb.dataset.name || '',
-            x: (parseFloat(tb.style.left) || 0) / cw,
-            y: (parseFloat(tb.style.top) || 0) / ch,
-            w: tb.offsetWidth / cw,
-            h: tb.offsetHeight / ch,
-            lh: getLineHeightRatio(tb),
-            fpt
-          };
-        });
-        out[p] = list;
-      });
-      return out;
-    }
-
-    function selectBox(tb) {
-      document.querySelectorAll('.box').forEach(b => b.classList.remove('sel'));
-      selected = tb;
-      if (tb) tb.classList.add('sel');
-    }
-
-    function deleteSelected() {
-      if (!selected) return;
-      selected.remove();
-      selected = null;
-      autoSaveAnchors();
-    }
-
-    function duplicateSelected() {
-      if (!selected) return;
-      const pageWrap = selected.closest('.page');
-      const p = parseInt(pageWrap.dataset.page);
-      const cw = pageWrap.clientWidth, ch = pageWrap.clientHeight;
-      const fpt = parseFloat(selected.style.fontSize) / currentScale || 14;
-      const a = {
-        name: (selected.dataset.name || '') + '_copy',
-        x: (parseFloat(selected.style.left) || 0) / cw + 0.02,
-        y: (parseFloat(selected.style.top) || 0) / ch + 0.02,
-        w: selected.offsetWidth / cw,
-        h: selected.offsetHeight / ch,
-        lh: getLineHeightRatio(selected),
-        fpt
-      };
-      a.x = Math.min(a.x, 0.95);
-      a.y = Math.min(a.y, 0.95);
-      anchorsByPage[p] = anchorsByPage[p] || [];
-      anchorsByPage[p].push(a);
-      spawnBox(p, a);
-      autoSaveAnchors();
-    }
-
-    function applyName() {
-      if (!selected) return;
-      const name = fieldNameInput.value.trim();
-      if (!name) return alert('Field name cannot be empty.');
-      if (Object.keys(values).includes(name)) return alert('Field name already exists.');
-      selected.dataset.name = name;
-      if (!values[name]) values[name] = '';
-      autoSaveAnchors();
-    }
-
-    function applyFontSize() {
-      if (!selected) {
-        console.log('applyFontSize: No box selected');
-        return;
-      }
-      const fontSize = parseFloat(fontSizeSel.value);
-      if (isNaN(fontSize)) {
-        console.error('applyFontSize: Invalid font size');
-        return;
-      }
-      selected.style.fontSize = (fontSize * currentScale) + 'px';
-      console.log('applyFontSize: Set font-size to', selected.style.fontSize, 'for box', selected.dataset.name);
-      autoSaveAnchors();
-    }
-
-    function applyLineHeight() {
-      if (!selected) {
-        console.log('applyLineHeight: No box selected');
-        return;
-      }
-      const lineHeight = parseFloat(lineHeightSel.value);
-      if (isNaN(lineHeight)) {
-        console.error('applyLineHeight: Invalid line height');
-        return;
-      }
-      selected.style.lineHeight = lineHeight.toString();
-      console.log('applyLineHeight: Set line-height to', selected.style.lineHeight, 'for box', selected.dataset.name);
-      autoSaveAnchors();
-    }
-
-    // ===== Local persistence (anchors + values as backup) =====
-    function saveAnchors() {
-      anchorsByPage = getAnchorsFromDom();
-      const payload = { anchorsByPage, version: 4 };
-      localStorage.setItem(storageKey(), JSON.stringify(payload));
-      showSavedBadge();
-    }
-
-    function loadAnchors() {
-      const raw = localStorage.getItem(storageKey());
-      if (!raw) return alert('No saved anchors for this file.');
-      try {
-        const p = JSON.parse(raw);
-        anchorsByPage = p.anchorsByPage || {};
-        renderAllPages();
-        showSavedBadge();
-      } catch (e) {
-        alert('Failed to parse anchors JSON.');
-      }
-    }
-
-    function exportAnchors() {
-      const data = JSON.stringify({ anchorsByPage, version: 4 }, null, 2);
-      download(fileKey + '-anchors.json', data);
-    }
-
-    function autoSaveAnchors() {
-      clearTimeout(autoSaveAnchors._t);
-      autoSaveAnchors._t = setTimeout(saveAnchors, 350);
-    }
-
-    // ===== Firestore persistence for VALUES =====
-    async function ensureFirebase() {
-      try {
-        fbApp = firebase.initializeApp(firebaseConfig);
-        auth = firebase.auth();
-        db = firebase.firestore();
-        // Offline cache (best-effort)
-        try { await db.enablePersistence({ synchronizeTabs: true }); } catch (_) {}
-        // Anonymous sign-in so each device/session can have its own doc
-        const cred = await auth.signInAnonymously();
-        uid = cred.user?.uid || 'anon';
-        docRef = db.collection('forms').doc(fileKey).collection('sessions').doc(uid);
-      } catch (e) {
-        console.error('Firebase init/auth failed:', e);
-      }
-    }
-
-    async function loadValuesFromFirestore() {
-      if (!docRef) return;
-      try {
-        const snap = await docRef.get();
-        if (snap.exists) {
-          const data = snap.data();
-          values = data?.values || {};
-          applyValuesToDom();
-        }
-      } catch (e) {
-        console.warn('Load Firestore values failed:', e);
-      }
-    }
-
-    async function saveValuesToFirestore() {
-      if (!docRef) return;
-      try {
-        // merge so future fields are preserved
-        await docRef.set({
-          values,
-          fileKey,
-          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
-      } catch (e) {
-        console.warn('Save to Firestore failed:', e);
-      }
-    }
-
-    function autoSaveValues() {
-      clearTimeout(autoSaveValues._t);
-      autoSaveValues._t = setTimeout(async () => {
-        // local backup
-        localStorage.setItem('values:' + fileKey, JSON.stringify(values));
-        // cloud save
-        await saveValuesToFirestore();
-        showSavedBadge();
-      }, 400);
-    }
-
     function applyValuesToDom() {
       document.querySelectorAll('.box').forEach(tb => {
         const k = tb.dataset.name || '';
         if (k && Object.prototype.hasOwnProperty.call(values, k)) {
-          const current = tb.textContent || '';
+          const current = tb.innerText || '';
           const next = values[k] || '';
-          if (current !== next) tb.textContent = next;
+          if (current !== next) tb.innerText = next;
         }
       });
     }
 
-    importAnchorsInput.addEventListener('change', async (e) => {
-      const f = e.target.files?.[0];
-      if (!f) return;
-      const text = await f.text();
+    // ===== Firestore persistence for VALUES (no auth) =====
+    async function ensureFirebase() {
       try {
-        const p = JSON.parse(text, (key, value) => {
-          if (key === '__proto__' || key === 'constructor') return undefined;
-          return value;
-        });
-        anchorsByPage = p.anchorsByPage || {};
-        await renderAllPages();
-        showSavedBadge();
-      } catch (err) {
-        alert('Invalid or malicious JSON');
+        console.log('Attempting Firebase initialization...');
+        const requiredFields = ['apiKey', 'authDomain', 'projectId', 'appId'];
+        for (const field of requiredFields) {
+          if (!firebaseConfig[field]) {
+            throw new Error(`Missing required Firebase config field: ${field}`);
+          }
+        }
+        fbApp = firebase.initializeApp(firebaseConfig);
+        db = firebase.firestore();
+        firebaseInitialized = true;
+        console.log('Firebase fully initialized (no auth)');
+      } catch (e) {
+        console.error('Firebase initialization failed:', e.message, e.code || 'No code');
+        alert(`Failed to initialize Firebase: ${e.message}. Falling back to local storage.`);
+        firebaseInitialized = false;
+        db = null;
       }
-    });
+    }
+
+    async function loadValuesFromFirestore(docRef) {
+      if (!docRef || !firebaseInitialized) return;
+      try {
+        console.log('Loading values for docRef:', docRef.path);
+        const snap = await docRef.get();
+        if (snap.exists) {
+          const data = snap.data();
+          values = { ...data?.values } || {};
+          applyValuesToDom();
+          console.log('Loaded values from Firestore:', values);
+        } else {
+          console.warn('No data found for docRef:', docRef.path);
+          values = {};
+        }
+      } catch (e) {
+        console.error('Load Firestore values failed:', e.message, e.code || 'No code', e.stack);
+        alert('Failed to load values: ' + e.message);
+        throw e;
+      }
+    }
+
+    async function saveValuesToFirestore(docRef, displayId, type) {
+      if (!docRef || !firebaseInitialized) return;
+      try {
+        console.log('Saving values to Firestore:', values, 'for docRef:', docRef.path);
+        await docRef.set({
+          displayId,
+          type,
+          values: { ...values },
+          fileKey,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        console.log('Saved values to Firestore');
+      } catch (e) {
+        console.error('Save to Firestore failed:', e.message, e.code || 'No code');
+        alert('Failed to save values: ' + e.message);
+      }
+    }
+
+    function autoSaveValues() {
+      if (!docRef) return;
+      clearTimeout(autoSaveValues._t);
+      autoSaveValues._t = setTimeout(async () => {
+        try {
+          localStorage.setItem('values:' + fileKey, JSON.stringify(values));
+          await saveValuesToFirestore(docRef, currentAdmissionId, isTemplateMode ? 'template' : 'admission');
+          showSavedBadge();
+        } catch (e) {
+          console.error('Auto-save failed:', e);
+          alert('Failed to auto-save: ' + e.message);
+        }
+      }, 400);
+    }
+
+    function showNewAdmissionModal(isSaveAsNew = false, isTemplate = false) {
+      console.log(`Opening ${isTemplate ? 'new template' : 'new admission'} modal${isSaveAsNew ? ' (save as new)' : ''}`);
+      overlay.classList.add('hidden');
+      const modal = document.createElement('div');
+      modal.className = 'modal fixed inset-0 flex items-center justify-center bg-black/50';
+      const content = document.createElement('div');
+      content.className = 'bg-white p-6 rounded-lg shadow-xl max-w-sm w-full';
+      content.innerHTML = `
+        <h2 class="text-lg font-bold mb-4">${isTemplate ? 'New Template' : 'New Admission'}</h2>
+        <label class="block mb-2 text-sm font-medium text-slate-700">Age (years)</label>
+        <input id="ageInput" type="number" min="0" class="w-full border border-slate-300 p-2 mb-2 rounded-lg focus:ring-2 focus:ring-blue-500">
+        <label class="block mb-2 text-sm font-medium text-slate-700">Sex</label>
+        <select id="sexSelect" class="w-full border border-slate-300 p-2 mb-2 rounded-lg focus:ring-2 focus:ring-blue-500">
+          <option value="M">Male</option>
+          <option value="F">Female</option>
+          <option value="O">Other</option>
+        </select>
+        <label class="block mb-2 text-sm font-medium text-slate-700">Diagnosis</label>
+        <input id="diagInput" type="text" class="w-full border border-slate-300 p-2 mb-4 rounded-lg focus:ring-2 focus:ring-blue-500">
+        <button id="createBtn" class="btn btn-primary w-full">Create</button>
+        <button id="cancelBtn" class="btn w-full mt-2">Cancel</button>
+      `;
+      modal.appendChild(content);
+      document.body.appendChild(modal);
+
+      const createBtn = content.querySelector('#createBtn');
+      const cancelBtn = content.querySelector('#cancelBtn');
+      const ageInput = content.querySelector('#ageInput');
+      const sexSelect = content.querySelector('#sexSelect');
+      const diagInput = content.querySelector('#diagInput');
+
+      cancelBtn.addEventListener('click', () => {
+        console.log('Cancel button clicked, closing modal');
+        modal.remove();
+      });
+
+      createBtn.addEventListener('click', async () => {
+        console.log('Create button clicked');
+        createBtn.disabled = true;
+        createBtn.textContent = 'Creating...';
+        overlay.classList.remove('hidden');
+        overlay.textContent = `Creating ${isTemplate ? 'template' : 'admission'}…`;
+        const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
+        try {
+          const age = ageInput.value.trim();
+          const sex = sexSelect.value;
+          const diagnosis = diagInput.value.trim().toUpperCase();
+          console.log('Input values:', { age, sex, diagnosis });
+          if (!age || !sex || !diagnosis) {
+            console.warn('Validation failed: Missing required fields');
+            alert('All fields are required.');
+            return;
+          }
+          if (!/^\d+$/.test(age) || parseInt(age) < 0 || parseInt(age) > 150) {
+            console.warn('Validation failed: Invalid age');
+            alert('Age must be a number between 0 and 150.');
+            return;
+          }
+          if (!/^[A-Z0-9\s]+$/.test(diagnosis)) {
+            console.warn('Validation failed: Invalid diagnosis');
+            alert('Diagnosis must be alphanumeric.');
+            return;
+          }
+          const now = new Date();
+          const day = now.getDate();
+          const month = now.getMonth() + 1;
+          const year = now.getFullYear();
+          const hours = now.getHours().toString().padStart(2, '0');
+          const minutes = now.getMinutes().toString().padStart(2, '0');
+          const displayId = `${age}y/${sex} ${diagnosis} (${day}-${month}-${year} ${hours}:${minutes})`;
+          const docId = displayId.replace(/ /g, '_').replace(/\//g, '-').replace(/[\(\)]/g, '');
+          console.log('Generated ID:', displayId, 'Doc ID:', docId);
+
+          const currentValues = isSaveAsNew ? { ...values } : {};
+          if (!isSaveAsNew) {
+            values = {};
+            docRef = null;
+            currentAdmissionId = null;
+            isTemplateMode = isTemplate;
+          }
+
+          if (firebaseInitialized && db) {
+            const newDocRef = db.collection('admissions').doc(docId);
+            console.log('Writing to Firestore at:', newDocRef.path);
+            await newDocRef.set({
+              displayId,
+              type: isTemplate ? 'template' : 'admission',
+              values: currentValues,
+              fileKey,
+              updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            console.log(`${isTemplate ? 'Template' : 'Admission'} created in Firestore:`, docId);
+            if (!isSaveAsNew) {
+              docRef = newDocRef;
+              currentAdmissionId = docId;
+              localStorage.setItem('currentAdmission:' + fileKey, docId);
+            }
+            await (isTemplate ? loadTemplates() : loadAdmissions());
+          } else {
+            console.warn('Firebase not initialized, using localStorage');
+            let items = JSON.parse(localStorage.getItem(`${isTemplate ? 'templates' : 'admissions'}:${fileKey}`) || '{}');
+            items[docId] = { 
+              displayId, 
+              type: isTemplate ? 'template' : 'admission', 
+              values: currentValues, 
+              fileKey, 
+              updatedAt: now.toISOString() 
+            };
+            localStorage.setItem(`${isTemplate ? 'templates' : 'admissions'}:${fileKey}`, JSON.stringify(items));
+            console.log(`${isTemplate ? 'Template' : 'Admission'} created locally:`, docId);
+            if (!isSaveAsNew) {
+              values = currentValues;
+              currentAdmissionId = docId;
+              localStorage.setItem('currentAdmission:' + fileKey, docId);
+            }
+            await (isTemplate ? loadTemplates() : loadAdmissions());
+          }
+
+          if (!isSaveAsNew) {
+            values = currentValues;
+            applyValuesToDom();
+            setEditable(true);
+          }
+          showSavedBadge(isTemplate ? 'Template Created' : isSaveAsNew ? 'New Admission Created' : 'Admission Created');
+          modal.remove();
+          console.log('Modal closed, creation successful');
+        } catch (e) {
+          console.error(`${isTemplate ? 'Template' : 'Admission'} creation failed:`, e.message, e.code || 'No code');
+          alert(`Failed to create ${isTemplate ? 'template' : 'admission'}: ` + e.message);
+        } finally {
+          await minDisplayTime;
+          createBtn.disabled = false;
+          createBtn.textContent = 'Create';
+          overlay.classList.add('hidden');
+          console.log('Create button state restored');
+        }
+      });
+    }
+
+    async function loadAdmissions() {
+      console.log('Loading admissions');
+      overlay.classList.remove('hidden');
+      overlay.textContent = 'Loading admissions…';
+      const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
+      admissionsList.innerHTML = '';
+      if (!firebaseInitialized || !db) {
+        console.warn('Firebase not initialized, loading from localStorage');
+        let admissions = {};
+        try {
+          admissions = JSON.parse(localStorage.getItem('admissions:' + fileKey) || '{}');
+        } catch (e) {
+          console.error('Failed to parse admissions from localStorage:', e);
+          admissionsList.innerHTML = '<p class="text-slate-500">Error loading admissions.</p>';
+          await minDisplayTime;
+          overlay.classList.add('hidden');
+          return;
+        }
+        if (Object.keys(admissions).length === 0) {
+          admissionsList.innerHTML = '<p class="text-slate-500">No admissions yet.</p>';
+        } else {
+          Object.entries(admissions)
+            .filter(([_, data]) => data.type !== 'template')
+            .forEach(([id, data]) => {
+              const card = document.createElement('div');
+              card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
+              card.innerHTML = `
+                <h3 class="font-semibold text-slate-900">${data.displayId || id}</h3>
+                <p class="text-xs text-slate-500">Updated: ${new Date(data.updatedAt).toLocaleString()}</p>
+                <div class="mt-2 flex gap-2">
+                  <button class="load-btn btn btn-primary">Load</button>
+                  <button class="delete-btn btn">Delete</button>
+                </div>
+              `;
+              card.querySelector('.load-btn').addEventListener('click', async () => {
+                console.log('Loading admission:', id);
+                overlay.classList.remove('hidden');
+                overlay.textContent = 'Loading admission…';
+                const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
+                try {
+                  values = { ...data.values } || {};
+                  applyValuesToDom();
+                  setEditable(true);
+                  isTemplateMode = false;
+                  currentAdmissionId = id;
+                  localStorage.setItem('currentAdmission:' + fileKey, id);
+                  if (firebaseInitialized && db) {
+                    docRef = db.collection('admissions').doc(id);
+                  }
+                  try {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  } catch (e) {
+                    console.warn('Smooth scroll failed:', e);
+                    window.scroll(0, 0);
+                  }
+                  console.log('Admission loaded:', id);
+                } catch (e) {
+                  console.error('Failed to load admission:', e);
+                  alert('Failed to load admission: ' + e.message);
+                } finally {
+                  await minDisplayTime;
+                  overlay.classList.add('hidden');
+                }
+              });
+              card.querySelector('.delete-btn').addEventListener('click', async () => {
+                console.log('Delete button clicked for admission:', id);
+                if (id === currentAdmissionId) {
+                  console.warn('Cannot delete active admission:', id);
+                  alert('Cannot delete the active admission. Load another admission first.');
+                  return;
+                }
+                try {
+                  overlay.classList.remove('hidden');
+                  overlay.textContent = 'Deleting admission…';
+                  const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
+                  if (firebaseInitialized && db) {
+                    const admissionRef = db.collection('admissions').doc(id);
+                    console.log('Deleting from Firestore:', admissionRef.path);
+                    await admissionRef.delete();
+                    console.log('Admission deleted from Firestore:', id);
+                  }
+                  let admissions = JSON.parse(localStorage.getItem('admissions:' + fileKey) || '{}');
+                  delete admissions[id];
+                  localStorage.setItem('admissions:' + fileKey, JSON.stringify(admissions));
+                  console.log('Admission deleted from localStorage:', id);
+                  await loadAdmissions();
+                  showSavedBadge('Admission Deleted');
+                  await minDisplayTime;
+                } catch (e) {
+                  console.error('Delete admission failed:', e.message, e.code || 'No code');
+                  alert('Failed to delete admission: ' + e.message);
+                } finally {
+                  overlay.classList.add('hidden');
+                }
+              });
+              admissionsList.appendChild(card);
+            });
+          console.log('Admissions loaded from localStorage');
+        }
+        await minDisplayTime;
+        overlay.classList.add('hidden');
+        return;
+      }
+      try {
+        const admissionsCol = db.collection('admissions').where('type', '!=', 'template');
+        console.log('Loading admissions from Firestore');
+        const snap = await admissionsCol.get();
+        if (snap.empty) {
+          admissionsList.innerHTML = '<p class="text-slate-500">No admissions yet.</p>';
+        }
+        snap.forEach(doc => {
+          const data = doc.data();
+          const card = document.createElement('div');
+          card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
+          card.innerHTML = `
+            <h3 class="font-semibold text-slate-900">${data.displayId || doc.id}</h3>
+            <p class="text-xs text-slate-500">Updated: ${data.updatedAt?.toDate()?.toLocaleString() || 'N/A'}</p>
+            <div class="mt-2 flex gap-2">
+              <button class="load-btn btn btn-primary">Load</button>
+              <button class="delete-btn btn">Delete</button>
+            </div>
+          `;
+          card.querySelector('.load-btn').addEventListener('click', async () => {
+            console.log('Loading admission:', doc.id);
+            overlay.classList.remove('hidden');
+            overlay.textContent = 'Loading admission…';
+            const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
+            try {
+              docRef = doc.ref;
+              await loadValuesFromFirestore(doc.ref);
+              setEditable(true);
+              isTemplateMode = false;
+              currentAdmissionId = doc.id;
+              localStorage.setItem('currentAdmission:' + fileKey, doc.id);
+              try {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              } catch (e) {
+                console.warn('Smooth scroll failed:', e);
+                window.scroll(0, 0);
+              }
+              console.log('Admission loaded:', doc.id);
+            } catch (e) {
+              console.error('Failed to load admission:', e);
+              alert('Failed to load admission: ' + e.message);
+            } finally {
+              await minDisplayTime;
+              overlay.classList.add('hidden');
+            }
+          });
+          card.querySelector('.delete-btn').addEventListener('click', async () => {
+            console.log('Delete button clicked for admission:', doc.id);
+            if (doc.id === currentAdmissionId) {
+              console.warn('Cannot delete active admission:', doc.id);
+              alert('Cannot delete the active admission. Load another admission first.');
+              return;
+            }
+            try {
+              overlay.classList.remove('hidden');
+              overlay.textContent = 'Deleting admission…';
+              const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
+              console.log('Deleting from Firestore:', doc.ref.path);
+              await doc.ref.delete();
+              console.log('Admission deleted from Firestore:', doc.id);
+              let admissions = JSON.parse(localStorage.getItem('admissions:' + fileKey) || '{}');
+              delete admissions[doc.id];
+              localStorage.setItem('admissions:' + fileKey, JSON.stringify(admissions));
+              console.log('Admission deleted from localStorage:', doc.id);
+              await loadAdmissions();
+              showSavedBadge('Admission Deleted');
+              await minDisplayTime;
+            } catch (e) {
+              console.error('Delete admission failed:', e.message, e.code || 'No code');
+              alert('Failed to delete admission: ' + e.message);
+            } finally {
+              overlay.classList.add('hidden');
+            }
+          });
+          admissionsList.appendChild(card);
+        });
+        console.log('Admissions loaded successfully');
+      } catch (e) {
+        console.error('Load admissions failed:', e.message, e.code || 'No code');
+        alert('Failed to load admissions: ' + e.message);
+        admissionsList.innerHTML = '<p class="text-slate-500">Error loading admissions.</p>';
+      } finally {
+        await minDisplayTime;
+        overlay.classList.add('hidden');
+      }
+    }
+
+    async function loadTemplates() {
+      console.log('Loading templates');
+      overlay.classList.remove('hidden');
+      overlay.textContent = 'Loading templates…';
+      const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
+      templatesList.innerHTML = '';
+      if (!firebaseInitialized || !db) {
+        console.warn('Firebase not initialized, loading from localStorage');
+        let templates = {};
+        try {
+          templates = JSON.parse(localStorage.getItem('templates:' + fileKey) || '{}');
+        } catch (e) {
+          console.error('Failed to parse templates from localStorage:', e);
+          templatesList.innerHTML = '<p class="text-slate-500">Error loading templates.</p>';
+          await minDisplayTime;
+          overlay.classList.add('hidden');
+          return;
+        }
+        if (Object.keys(templates).length === 0) {
+          templatesList.innerHTML = '<p class="text-slate-500">No templates yet.</p>';
+        } else {
+          Object.entries(templates)
+            .filter(([_, data]) => data.type === 'template')
+            .forEach(([id, data]) => {
+              const card = document.createElement('div');
+              card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
+              card.innerHTML = `
+                <h3 class="font-semibold text-slate-900">${data.displayId || id}</h3>
+                <p class="text-xs text-slate-500">Updated: ${new Date(data.updatedAt).toLocaleString()}</p>
+                <div class="mt-2 flex gap-2">
+                  <button class="load-btn btn btn-primary">Load</button>
+                  <button class="delete-btn btn">Delete</button>
+                </div>
+              `;
+              card.querySelector('.load-btn').addEventListener('click', async () => {
+                console.log('Loading template:', id);
+                overlay.classList.remove('hidden');
+                overlay.textContent = 'Loading template…';
+                const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
+                try {
+                  values = { ...data.values } || {};
+                  applyValuesToDom();
+                  setEditable(true);
+                  isTemplateMode = true;
+                  currentAdmissionId = id;
+                  localStorage.setItem('currentAdmission:' + fileKey, id);
+                  if (firebaseInitialized && db) {
+                    docRef = db.collection('admissions').doc(id);
+                  }
+                  try {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  } catch (e) {
+                    console.warn('Smooth scroll failed:', e);
+                    window.scroll(0, 0);
+                  }
+                  console.log('Template loaded:', id);
+                } catch (e) {
+                  console.error('Failed to load template:', e);
+                  alert('Failed to load template: ' + e.message);
+                } finally {
+                  await minDisplayTime;
+                  overlay.classList.add('hidden');
+                }
+              });
+              card.querySelector('.delete-btn').addEventListener('click', async () => {
+                console.log('Delete button clicked for template:', id);
+                if (id === currentAdmissionId) {
+                  console.warn('Cannot delete active template:', id);
+                  alert('Cannot delete the active template. Load another template or admission first.');
+                  return;
+                }
+                try {
+                  overlay.classList.remove('hidden');
+                  overlay.textContent = 'Deleting template…';
+                  const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
+                  if (firebaseInitialized && db) {
+                    const templateRef = db.collection('admissions').doc(id);
+                    console.log('Deleting from Firestore:', templateRef.path);
+                    await templateRef.delete();
+                    console.log('Template deleted from Firestore:', id);
+                  }
+                  let templates = JSON.parse(localStorage.getItem('templates:' + fileKey) || '{}');
+                  delete templates[id];
+                  localStorage.setItem('templates:' + fileKey, JSON.stringify(templates));
+                  console.log('Template deleted from localStorage:', id);
+                  await loadTemplates();
+                  showSavedBadge('Template Deleted');
+                  await minDisplayTime;
+                } catch (e) {
+                  console.error('Delete template failed:', e.message, e.code || 'No code');
+                  alert('Failed to delete template: ' + e.message);
+                } finally {
+                  overlay.classList.add('hidden');
+                }
+              });
+              templatesList.appendChild(card);
+            });
+          console.log('Templates loaded from localStorage');
+        }
+        await minDisplayTime;
+        overlay.classList.add('hidden');
+        return;
+      }
+      try {
+        const templatesCol = db.collection('admissions').where('type', '==', 'template');
+        console.log('Loading templates from Firestore');
+        const snap = await templatesCol.get();
+        if (snap.empty) {
+          templatesList.innerHTML = '<p class="text-slate-500">No templates yet.</p>';
+        }
+        snap.forEach(doc => {
+          const data = doc.data();
+          const card = document.createElement('div');
+          card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
+          card.innerHTML = `
+            <h3 class="font-semibold text-slate-900">${data.displayId || doc.id}</h3>
+            <p class="text-xs text-slate-500">Updated: ${data.updatedAt?.toDate()?.toLocaleString() || 'N/A'}</p>
+            <div class="mt-2 flex gap-2">
+              <button class="load-btn btn btn-primary">Load</button>
+              <button class="delete-btn btn">Delete</button>
+            </div>
+          `;
+          card.querySelector('.load-btn').addEventListener('click', async () => {
+            console.log('Loading template:', doc.id);
+            overlay.classList.remove('hidden');
+            overlay.textContent = 'Loading template…';
+            const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
+            try {
+              await loadValuesFromFirestore(doc.ref);
+              setEditable(true);
+              isTemplateMode = true;
+              currentAdmissionId = doc.id;
+              docRef = doc.ref;
+              localStorage.setItem('currentAdmission:' + fileKey, doc.id);
+              try {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              } catch (e) {
+                console.warn('Smooth scroll failed:', e);
+                window.scroll(0, 0);
+              }
+              console.log('Template loaded:', doc.id);
+            } catch (e) {
+              console.error('Failed to load template:', e);
+              alert('Failed to load template: ' + e.message);
+            } finally {
+              await minDisplayTime;
+              overlay.classList.add('hidden');
+            }
+          });
+          card.querySelector('.delete-btn').addEventListener('click', async () => {
+            console.log('Delete button clicked for template:', doc.id);
+            if (doc.id === currentAdmissionId) {
+              console.warn('Cannot delete active template:', doc.id);
+              alert('Cannot delete the active template. Load another template or admission first.');
+              return;
+            }
+            try {
+              overlay.classList.remove('hidden');
+              overlay.textContent = 'Deleting template…';
+              const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
+              console.log('Deleting from Firestore:', doc.ref.path);
+              await doc.ref.delete();
+              console.log('Template deleted from Firestore:', doc.id);
+              let templates = JSON.parse(localStorage.getItem('templates:' + fileKey) || '{}');
+              delete templates[doc.id];
+              localStorage.setItem('templates:' + fileKey, JSON.stringify(templates));
+              console.log('Template deleted from localStorage:', doc.id);
+              await loadTemplates();
+              showSavedBadge('Template Deleted');
+              await minDisplayTime;
+            } catch (e) {
+              console.error('Delete template failed:', e.message, e.code || 'No code');
+              alert('Failed to delete template: ' + e.message);
+            } finally {
+              overlay.classList.add('hidden');
+            }
+          });
+          templatesList.appendChild(card);
+        });
+        console.log('Templates loaded successfully');
+      } catch (e) {
+        console.error('Load templates failed:', e.message, e.code || 'No code');
+        alert('Failed to load templates: ' + e.message);
+        templatesList.innerHTML = '<p class="text-slate-500">Error loading templates.</p>';
+      } finally {
+        await minDisplayTime;
+        overlay.classList.add('hidden');
+      }
+    }
 
     // ===== Enhanced Text Wrapping for PDF export =====
     function wrapTextBlocks(text) {
@@ -741,129 +1113,127 @@
     }
 
     async function buildPdfBlob() {
-      const pdfBytes = await fetch(PDF_URL).then(r => r.arrayBuffer());
-      const pdf = await PDFLib.PDFDocument.load(pdfBytes);
-      const font = await pdf.embedFont(PDFLib.StandardFonts.Helvetica);
+      try {
+        const pdfBytes = await fetch(PDF_URL).then(r => r.arrayBuffer());
+        const pdf = await PDFLib.PDFDocument.load(pdfBytes);
+        const font = await pdf.embedFont(PDFLib.StandardFonts.Helvetica);
 
-      for (let p = 1; p <= pdf.getPageCount(); p++) {
-        const page = pdf.getPages()[p - 1];
-        const { width, height } = page.getSize();
-        const list = anchorsByPage[p] || [];
-        list.forEach(a => {
-          const name = a.name || '';
-          const text = (values[name] || '').toString();
-          if (!text) return;
-          const fpt = a.fpt || 14;
-          const lh = a.lh || 1.2;
-          const pad = 2;
-          const boxW = a.w * width - pad * 2;
-          const boxH = a.h * height - pad * 2;
-          const startX = a.x * width + pad;
-          const topY = height - (a.y * height) - pad;
+        for (let p = 1; p <= pdf.getPageCount(); p++) {
+          const page = pdf.getPages()[p - 1];
+          const { width, height } = page.getSize();
+          const list = anchorsByPage[p] || [];
+          list.forEach(a => {
+            const name = a.name || '';
+            const text = (values[name] || '').toString();
+            if (!text) return;
+            const fpt = a.fpt || 14;
+            const lh = a.lh || 1.2;
+            const pad = 2;
+            const boxW = a.w * width - pad * 2;
+            const boxH = a.h * height - pad * 2;
+            const startX = a.x * width + pad;
+            const topY = height - (a.y * height) - pad;
 
-          const blocks = wrapTextBlocks(text);
-          let y = topY - fpt;
-          outer: for (const b of blocks) {
-            const lines = wrapLineToWidth(b, font, fpt, boxW);
-            for (const ln of lines) {
-              if ((topY - y) > boxH + fpt * 0.2) break outer;
-              page.drawText(ln, { x: startX, y, size: fpt, font, color: PDFLib.rgb(0, 0, 0) });
-              y -= fpt * lh;
+            const blocks = wrapTextBlocks(text);
+            let y = topY - fpt;
+            outer: for (const b of blocks) {
+              const lines = wrapLineToWidth(b, font, fpt, boxW);
+              for (const ln of lines) {
+                if ((topY - y) > boxH + fpt * 0.2) break outer;
+                page.drawText(ln, { x: startX, y, size: fpt, font, color: PDFLib.rgb(0, 0, 0) });
+                y -= fpt * lh;
+              }
+              y -= fpt * (lh - 1);
             }
-            y -= fpt * (lh - 1);
-          }
-        });
+          });
+        }
+        const outBytes = await pdf.save();
+        return new Blob([outBytes], { type: 'application/pdf' });
+      } catch (e) {
+        console.error('Build PDF failed:', e);
+        throw e;
       }
-      const outBytes = await pdf.save();
-      return new Blob([outBytes], { type: 'application/pdf' });
     }
 
     async function doExport() {
-      const blob = await buildPdfBlob();
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = fileKey + '-filled.pdf';
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      try {
+        overlay.classList.remove('hidden');
+        overlay.textContent = 'Preparing download…';
+        const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
+        const blob = await buildPdfBlob();
+        download(fileKey + '-filled.pdf', blob);
+        await minDisplayTime;
+      } catch (e) {
+        console.error('Export failed:', e);
+        alert('Failed to export PDF: ' + e.message);
+      } finally {
+        overlay.classList.add('hidden');
+      }
     }
 
     async function doPrint() {
-      const blob = await buildPdfBlob();
-      const url = URL.createObjectURL(blob);
-      const iframe = document.createElement('iframe');
-      iframe.style.position = 'fixed';
-      iframe.style.right = '0';
-      iframe.style.bottom = '0';
-      iframe.style.width = '0';
-      iframe.style.height = '0';
-      iframe.style.border = '0';
-      document.body.appendChild(iframe);
-      iframe.onload = () => {
-        setTimeout(() => {
-          try {
-            iframe.contentWindow.focus();
-            iframe.contentWindow.print();
-          } catch {}
-        }, 300);
-      };
-      iframe.src = url;
-      setTimeout(() => URL.revokeObjectURL(url), 15000);
+      try {
+        overlay.classList.remove('hidden');
+        overlay.textContent = 'Preparing print…';
+        const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
+        const blob = await buildPdfBlob();
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank')?.print();
+        setTimeout(() => URL.revokeObjectURL(url), 15000);
+        await minDisplayTime;
+      } catch (e) {
+        console.error('Print failed:', e);
+        alert('Failed to print: ' + e.message);
+        overlay.textContent = 'Failed to print. Click to retry.';
+        overlay.style.cursor = 'pointer';
+        overlay.addEventListener('click', () => {
+          overlay.style.cursor = 'auto';
+          doPrint();
+        }, { once: true });
+      } finally {
+        overlay.classList.add('hidden');
+      }
+    }
+
+    async function doSave() {
+      if (!docRef || !currentAdmissionId) {
+        alert('No admission or template selected. Create or load one first.');
+        return;
+      }
+      try {
+        overlay.classList.remove('hidden');
+        overlay.textContent = 'Saving…';
+        const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
+        localStorage.setItem('values:' + fileKey, JSON.stringify(values));
+        await saveValuesToFirestore(docRef, currentAdmissionId, isTemplateMode ? 'template' : 'admission');
+        showSavedBadge();
+        await (isTemplateMode ? loadTemplates() : loadAdmissions());
+        await minDisplayTime;
+      } catch (e) {
+        console.error('Save failed:', e);
+        alert('Failed to save: ' + e.message);
+      } finally {
+        overlay.classList.add('hidden');
+      }
     }
 
     // ===== Events =====
-    pagesRoot.addEventListener('click', (e) => {
-      const tb = e.target.closest('.box');
-      selectBox(tb || null);
+    newAdmissionBtn.addEventListener('click', () => {
+      console.log('New admission button clicked');
+      showNewAdmissionModal();
     });
-
-    addFieldBtn.addEventListener('click', () => {
-      if (!pdfDoc || modeSel.value !== 'design') return;
-      adding = true;
-      document.body.style.cursor = 'crosshair';
+    newTemplateBtn.addEventListener('click', () => {
+      console.log('New template button clicked');
+      showNewAdmissionModal(false, true);
     });
-
-    delFieldBtn.addEventListener('click', deleteSelected);
-    dupFieldBtn.addEventListener('click', duplicateSelected);
-    applyNameBtn.addEventListener('click', applyName);
-    fontSizeSel.addEventListener('change', applyFontSize);
-    lineHeightSel.addEventListener('change', applyLineHeight);
-    saveAnchorsBtn.addEventListener('click', saveAnchors);
-    loadAnchorsBtn.addEventListener('click', loadAnchors);
-    exportAnchorsBtn.addEventListener('click', exportAnchors);
+    saveBtn.addEventListener('click', doSave);
+    saveAsNewBtn.addEventListener('click', () => {
+      console.log('Save as new button clicked');
+      showNewAdmissionModal(true);
+    });
     printBtn.addEventListener('click', doPrint);
     exportBtn.addEventListener('click', doExport);
-
-    modeSel.addEventListener('change', () => {
-      document.body.classList.toggle('design', modeSel.value === 'design');
-      fontSizeSel.disabled = modeSel.value !== 'design';
-      lineHeightSel.disabled = modeSel.value !== 'design';
-      refreshBoxesInteractivity();
-    });
-
-    pagesRoot.addEventListener('click', (e) => {
-      if (!adding || modeSel.value !== 'design') return;
-      const pageWrap = e.target.closest('.page');
-      if (!pageWrap) return;
-      const r = pageWrap.getBoundingClientRect();
-      const x = (e.clientX - r.left) / r.width;
-      const y = (e.clientY - r.top) / r.height;
-      const a = {
-        name: '',
-        x: Math.max(0, Math.min(1, x - 0.15)),
-        y: Math.max(0, Math.min(1, y - 0.03)),
-        w: 0.3,
-        h: 0.06,
-        lh: parseFloat(lineHeightSel.value) || 1.2,
-        fpt: parseFloat(fontSizeSel.value) || 14
-      };
-      const p = parseInt(pageWrap.dataset.page);
-      anchorsByPage[p] = anchorsByPage[p] || [];
-      anchorsByPage[p].push(a);
-      spawnBox(p, a);
-      adding = false;
-      document.body.style.cursor = 'default';
-      autoSaveAnchors();
-    });
+    copyTextBtn.addEventListener('click', copyFormText);
 
     let _resizeTO = null;
     window.addEventListener('resize', () => {
@@ -877,62 +1247,57 @@
     async function loadPdf() {
       try {
         overlay.classList.remove('hidden');
+        overlay.textContent = 'Loading PDF…';
+        const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
         setEnabled(false);
         pdfDoc = await pdfjsLib.getDocument(PDF_URL).promise;
         await renderAllPages();
         setEnabled(true);
+        await minDisplayTime;
       } catch (e) {
         console.error('PDF load error:', e);
-        alert('Failed to load Admission.pdf from GitHub. Ensure the file is public and accessible at ' + PDF_URL);
-        setEnabled(false);
+        alert('Failed to load PDF: ' + e.message);
+        overlay.textContent = 'Failed to load PDF. Click to retry.';
+        overlay.style.cursor = 'pointer';
+        overlay.addEventListener('click', () => {
+          overlay.style.cursor = 'auto';
+          loadPdf();
+        }, { once: true });
       } finally {
         overlay.classList.add('hidden');
       }
     }
 
     (async function init() {
-      // Load toolbar state
-      const toolbarState = localStorage.getItem('toolbarState:' + fileKey);
-      if (toolbarState === 'hidden') {
-        toolbar.classList.add('hidden');
-        toggleToolbarBtn.textContent = 'Show Toolbar';
-      } else {
-        toolbar.classList.add('expanded');
-        toggleToolbarBtn.textContent = 'Hide Toolbar';
-      }
+      console.log('Initializing application');
+      values = {};
+      docRef = null;
+      currentAdmissionId = null;
+      isTemplateMode = false;
+      localStorage.removeItem('values:' + fileKey);
+      localStorage.removeItem('currentAdmission:' + fileKey);
+      console.log('Initial state cleared:', { values, docRef, currentAdmissionId, isTemplateMode });
 
-      // Firebase init + session doc
       await ensureFirebase();
 
-      // Try to load anchors.json
       try {
         const p = await fetch('https://raw.githubusercontent.com/nuhadwrk/admission/main/anchors.json', { cache: 'no-store' });
         if (p.ok) {
           const j = await p.json();
           anchorsByPage = j.anchorsByPage || j;
+          console.log('Loaded anchors.json:', anchorsByPage);
+        } else {
+          console.warn('Failed to fetch anchors.json:', p.status);
         }
       } catch (e) {
         console.warn('No anchors.json found or failed to load:', e);
       }
 
-      // Load values from Firestore BEFORE rendering, so boxes get filled
-      await loadValuesFromFirestore();
-
       await loadPdf();
-
-      // Initial mode setup
-      fontSizeSel.disabled = modeSel.value !== 'design';
-      lineHeightSel.disabled = modeSel.value !== 'design';
-
-      // Also merge any local backup values (last-write-wins to cloud)
-      try {
-        const localVals = JSON.parse(localStorage.getItem('values:' + fileKey) || '{}');
-        if (localVals && Object.keys(localVals).length) {
-          values = { ...values, ...localVals };
-          applyValuesToDom();
-          await saveValuesToFirestore();
-        }
-      } catch {}
+      await loadAdmissions();
+      await loadTemplates();
+      setEditable(false);
+      console.log('Initialization complete');
     })();
   </script>
 </body>
