@@ -126,6 +126,7 @@
       #actionBar { left: 8px; right: 8px; bottom: 8px; padding: 6px; border-radius: 8px; flex-wrap: wrap; }
       .btn { padding: 6px 10px; font-size: 12px; }
       #stage { padding: 8px; }
+      body { padding-bottom: 120px; } /* Increased for mobile to prevent action bar occlusion */
     }
 
     @media print {
@@ -272,6 +273,15 @@
         tb.innerText = '';
         if (tb.dataset.name) delete values[tb.dataset.name];
       });
+    }
+
+    // Debounce helper
+    function debounce(fn, delay) {
+      let timeout;
+      return (...args) => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => fn(...args), delay);
+      };
     }
 
     // ========= INITIALIZE FIREBASE =========
@@ -636,21 +646,25 @@
 
     // ========= UI: Lists =========
     async function loadAdmissionsList() {
-      admissionsList.innerHTML = '';
       if (!firebaseInitialized || !db) {
         admissionsList.innerHTML = '<p class="text-slate-500">No Firestore connection. Please try again later.</p>';
         return;
       }
       try {
         const snap = await db.collection('admissions').where('type', '==', 'admission').get();
+        console.log('Admissions query executed, docs:', snap.size);
         if (snap.empty) {
           admissionsList.innerHTML = '<p class="text-slate-500">No admissions yet.</p>';
           return;
         }
-        snap.forEach(doc => {
+        admissionsList.innerHTML = ''; // Clear the list
+        // Sort by updatedAt descending (newest first)
+        const docs = snap.docs.sort((a, b) => (b.data().updatedAt?.toMillis() || 0) - (a.data().updatedAt?.toMillis() || 0));
+        docs.forEach(doc => {
           const data = doc.data();
           const card = document.createElement('div');
           card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
+          card.dataset.docId = doc.id; // Store doc ID for reference
           card.innerHTML = `
             <h3 class="font-semibold">${data.displayId || doc.id}</h3>
             <p class="text-xs text-slate-500">Updated: ${data.updatedAt?.toDate().toLocaleString() || 'N/A'}</p>
@@ -660,7 +674,7 @@
               <button class="btn delete-btn">Delete</button>
             </div>`;
           card.querySelector('.load-btn').onclick = async () => {
-            values = { ...(data.values || {}), fontSize: data.values?.fontSize || 14, lineHeight: data.values?.fontSize || 1.2 };
+            values = { ...(data.values || {}), fontSize: data.values?.fontSize || 14, lineHeight: data.values?.lineHeight || 1.2 };
             applyValuesToDom();
             fontSizeSelector.value = values.fontSize;
             lineHeightSelector.value = values.lineHeight;
@@ -708,28 +722,36 @@
           };
           admissionsList.appendChild(card);
         });
+        console.log('Admissions list loaded:', docs.length, 'documents');
       } catch (e) {
-        console.warn('Failed to load admissions:', e.message);
+        console.warn('Failed to load admissions:', e.message, e);
         admissionsList.innerHTML = '<p class="text-slate-500">Error loading admissions. Please try again.</p>';
       }
     }
 
+    // Debounced version of loadAdmissionsList
+    const debouncedLoadAdmissionsList = debounce(loadAdmissionsList, 100);
+
     async function loadTemplatesList() {
-      templatesList.innerHTML = '';
       if (!firebaseInitialized || !db) {
         templatesList.innerHTML = '<p class="text-slate-500">No Firestore connection. Please try again later.</p>';
         return;
       }
       try {
         const snap = await db.collection('admissions').where('type', '==', 'template').get();
+        console.log('Templates query executed, docs:', snap.size);
         if (snap.empty) {
           templatesList.innerHTML = '<p class="text-slate-500">No templates yet.</p>';
           return;
         }
-        snap.forEach(doc => {
+        templatesList.innerHTML = ''; // Clear the list
+        // Sort by updatedAt descending (newest first)
+        const docs = snap.docs.sort((a, b) => (b.data().updatedAt?.toMillis() || 0) - (a.data().updatedAt?.toMillis() || 0));
+        docs.forEach(doc => {
           const data = doc.data();
           const card = document.createElement('div');
           card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
+          card.dataset.docId = doc.id;
           card.innerHTML = `
             <h3 class="font-semibold">${data.displayId || doc.id}</h3>
             <p class="text-xs text-slate-500">Updated: ${data.updatedAt?.toDate().toLocaleString() || 'N/A'}</p>
@@ -773,11 +795,15 @@
           };
           templatesList.appendChild(card);
         });
+        console.log('Templates list loaded:', docs.length, 'documents');
       } catch (e) {
-        console.warn('Failed to load templates:', e.message);
+        console.warn('Failed to load templates:', e.message, e);
         templatesList.innerHTML = '<p class="text-slate-500">Error loading templates. Please try again.</p>';
       }
     }
+
+    // Debounced version of loadTemplatesList
+    const debouncedLoadTemplatesList = debounce(loadTemplatesList, 100);
 
     function copyFormText() {
       const order = ['complains', 'hopi', 'pasthx', 'personalhx', 'fhx', 'obs', 'ge', 'cvs', 'rs', 'pa', 'pelvis', 'cns', 'le', 'txhx', 'provdx', 'dx', 'management', 'management2'];
@@ -794,9 +820,86 @@
       db.collection('admissions')
         .where('type', '==', 'admission')
         .onSnapshot(snapshot => {
-          loadAdmissionsList();
+          console.log('Admissions snapshot triggered, changes:', snapshot.docChanges().length);
+          snapshot.docChanges().forEach(change => {
+            console.log(`Change detected: ${change.type}, doc: ${change.doc.id}`);
+            if (change.type === 'added' || change.type === 'modified') {
+              const doc = change.doc;
+              const data = doc.data();
+              // Remove existing card if it exists to prevent duplicates
+              const existingCard = admissionsList.querySelector(`[data-doc-id="${doc.id}"]`);
+              if (existingCard) existingCard.remove();
+              // Add new card
+              const card = document.createElement('div');
+              card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
+              card.dataset.docId = doc.id;
+              card.innerHTML = `
+                <h3 class="font-semibold">${data.displayId || doc.id}</h3>
+                <p class="text-xs text-slate-500">Updated: ${data.updatedAt?.toDate().toLocaleString() || 'N/A'}</p>
+                <div class="mt-2 flex gap-2">
+                  <button class="btn btn-primary load-btn">Load</button>
+                  <button class="btn copy-btn">Load As Copy</button>
+                  <button class="btn delete-btn">Delete</button>
+                </div>`;
+              card.querySelector('.load-btn').onclick = async () => {
+                values = { ...(data.values || {}), fontSize: data.values?.fontSize || 14, lineHeight: data.values?.lineHeight || 1.2 };
+                applyValuesToDom();
+                fontSizeSelector.value = values.fontSize;
+                lineHeightSelector.value = values.lineHeight;
+                isTemplateMode = false;
+                currentAdmissionId = doc.id;
+                isNewTemplate = false;
+                setEditable(true);
+                docRef = db.collection('admissions').doc(doc.id);
+                await loadValuesFromFirestore(docRef);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              };
+              card.querySelector('.copy-btn').onclick = () => {
+                openEntryModal({
+                  title: 'New Admission (Copy)',
+                  onCreate: async ({ age, sex, diagnosis }) => {
+                    const now = new Date();
+                    const stamp = `${String(now.getDate())}-${now.getMonth() + 1}-${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                    const displayId = `${age}y/${sex} ${diagnosis} (${stamp})`;
+                    const docId = displayId.replace(/ /g, '_').replace(/\//g, '-').replace(/[\(\)]/g, '');
+                    values = { ...(data.values || {}), fontSize: data.values?.fontSize || 14, lineHeight: data.values?.lineHeight || 1.2 };
+                    currentAdmissionId = docId;
+                    isTemplateMode = false;
+                    isNewTemplate = false;
+                    setEditable(true);
+                    fontSizeSelector.value = values.fontSize;
+                    lineHeightSelector.value = values.lineHeight;
+                    if (firebaseInitialized) {
+                      docRef = db.collection('admissions').doc(docId);
+                      await saveValuesToFirestore(docRef, displayId, 'admission');
+                    }
+                    applyValuesToDom();
+                    showSavedBadge('Admission Copy Created');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }
+                });
+              };
+              card.querySelector('.delete-btn').onclick = async () => {
+                if (doc.id === currentAdmissionId) return alert('Load another admission first.');
+                try {
+                  await db.collection('admissions').doc(doc.id).delete();
+                  showSavedBadge('Admission Deleted');
+                } catch (e) {
+                  alert('Failed to delete admission: ' + e.message);
+                }
+              };
+              admissionsList.appendChild(card);
+            } else if (change.type === 'removed') {
+              const card = admissionsList.querySelector(`[data-doc-id="${change.doc.id}"]`);
+              if (card) card.remove();
+            }
+          });
+          if (snapshot.empty) {
+            admissionsList.innerHTML = '<p class="text-slate-500">No admissions yet.</p>';
+          }
+          console.log('Admissions UI updated, total cards:', admissionsList.children.length);
         }, err => {
-          console.warn('Admissions listener error:', err.message);
+          console.warn('Admissions listener error:', err.message, err);
           admissionsList.innerHTML = '<p class="text-slate-500">Error loading admissions. Please try again.</p>';
         });
 
@@ -804,9 +907,72 @@
       db.collection('admissions')
         .where('type', '==', 'template')
         .onSnapshot(snapshot => {
-          loadTemplatesList();
+          console.log('Templates snapshot triggered, changes:', snapshot.docChanges().length);
+          snapshot.docChanges().forEach(change => {
+            console.log(`Change detected: ${change.type}, doc: ${change.doc.id}`);
+            if (change.type === 'added' || change.type === 'modified') {
+              const doc = change.doc;
+              const data = doc.data();
+              // Remove existing card if it exists to prevent duplicates
+              const existingCard = templatesList.querySelector(`[data-doc-id="${doc.id}"]`);
+              if (existingCard) existingCard.remove();
+              // Add new card
+              const card = document.createElement('div');
+              card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
+              card.dataset.docId = doc.id;
+              card.innerHTML = `
+                <h3 class="font-semibold">${data.displayId || doc.id}</h3>
+                <p class="text-xs text-slate-500">Updated: ${data.updatedAt?.toDate().toLocaleString() || 'N/A'}</p>
+                <div class="mt-2 flex gap-2">
+                  <button class="btn btn-primary load-btn">Use Template</button>
+                  <button class="btn delete-btn">Delete</button>
+                </div>`;
+              card.querySelector('.load-btn').onclick = () => {
+                openEntryModal({
+                  title: 'New Admission (From Template)',
+                  onCreate: async ({ age, sex, diagnosis }) => {
+                    const now = new Date();
+                    const stamp = `${String(now.getDate())}-${now.getMonth() + 1}-${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                    const displayId = `${age}y/${sex} ${diagnosis} (${stamp})`;
+                    const docId = displayId.replace(/ /g, '_').replace(/\//g, '-').replace(/[\(\)]/g, '');
+                    values = { ...(data.values || {}), fontSize: data.values?.fontSize || 14, lineHeight: data.values?.lineHeight || 1.2 };
+                    currentAdmissionId = docId;
+                    isTemplateMode = false;
+                    isNewTemplate = false;
+                    setEditable(true);
+                    fontSizeSelector.value = values.fontSize;
+                    lineHeightSelector.value = values.lineHeight;
+                    if (firebaseInitialized) {
+                      docRef = db.collection('admissions').doc(docId);
+                      await saveValuesToFirestore(docRef, displayId, 'admission');
+                    }
+                    applyValuesToDom();
+                    showSavedBadge('Admission Created');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }
+                });
+              };
+              card.querySelector('.delete-btn').onclick = async () => {
+                if (doc.id === currentAdmissionId && isTemplateMode) return alert('Load another template/admission first.');
+                try {
+                  await db.collection('admissions').doc(doc.id).delete();
+                  showSavedBadge('Template Deleted');
+                } catch (e) {
+                  alert('Failed to delete template: ' + e.message);
+                }
+              };
+              templatesList.appendChild(card);
+            } else if (change.type === 'removed') {
+              const card = templatesList.querySelector(`[data-doc-id="${change.doc.id}"]`);
+              if (card) card.remove();
+            }
+          });
+          if (snapshot.empty) {
+            templatesList.innerHTML = '<p class="text-slate-500">No templates yet.</p>';
+          }
+          console.log('Templates UI updated, total cards:', templatesList.children.length);
         }, err => {
-          console.warn('Templates listener error:', err.message);
+          console.warn('Templates listener error:', err.message, err);
           templatesList.innerHTML = '<p class="text-slate-500">Error loading templates. Please try again.</p>';
         });
     }
@@ -834,9 +1000,9 @@
         await createPages();
         console.log('Pages created');
         setEditable(false);
-        await loadAdmissionsList();
+        await debouncedLoadAdmissionsList();
         console.log('Admissions loaded');
-        await loadTemplatesList();
+        await debouncedLoadTemplatesList();
         console.log('Templates loaded');
       } catch (e) {
         console.error('Failed to initialize PDF:', e.message);
