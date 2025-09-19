@@ -120,15 +120,14 @@
       opacity: 0; transition: opacity .3s ease;
     }
     #saveBadge.visible { opacity: 1; }
-
-    @media (max-width: 640px) {
-      #chrome { padding: 8px; }
-      #actionBar { left: 8px; right: 8px; bottom: 8px; padding: 6px; border-radius: 8px; flex-wrap: wrap; }
-      .btn { padding: 6px 10px; font-size: 12px; }
-      #stage { padding: 8px; }
-      body { padding-bottom: 180px; } /* Increased for mobile to prevent action bar occlusion */
-    }
-
+  @media (max-width: 640px) {
+  #chrome { padding: 8px; }
+  #actionBar { left: 8px; right: 8px; bottom: 8px; padding: 6px; border-radius: 8px; flex-wrap: wrap; }
+  .btn { padding: 6px 10px; font-size: 12px; }
+  #stage { padding: 8px; }
+  body { padding-bottom: 200px; }
+  #templatesSection { margin-bottom: 100px; }
+}
     @media print {
       body, #chrome, #stage, .page-sizer, .page, .box, canvas { display: none !important; }
     }
