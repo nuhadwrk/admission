@@ -2,252 +2,201 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
   <title>Admission Form</title>
+
+  <!-- Tailwind (UI only) -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet"/>
+
   <!-- PDF.js (screen render) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
-  <script>pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
-  <!-- pdf-lib (exact vector export/print) -->
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+  </script>
+
+  <!-- pdf-lib (vector export/print) -->
   <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
-  <!-- Firebase (compat for simplicity, no auth) -->
+
+  <!-- Firebase (compat, no auth) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
 
   <style>
     :root { --ring: rgba(59,130,246,.35); }
     html, body { height: 100%; margin: 0; }
-    body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, 'Helvetica Neue', Arial; background: #f5f7fa; }
+    html { -webkit-text-size-adjust: 100%; font-size: 16px; }
+    body {
+      font-family: Helvetica, Arial, sans-serif;
+      font-kerning: normal;
+      background: #f5f7fa;
+      color: #1e293b;
+    }
+
     #chrome { max-width: 1100px; margin: 0 auto; padding: clamp(8px, 2vw, 16px); }
-    #actionBar { 
-      position: fixed; 
-      bottom: 16px; 
-      right: 16px; 
-      z-index: 50; 
-      display: flex; 
-      gap: 8px; 
-      padding: 8px; 
-      background: rgba(255,255,255,0.95); 
-      border: 1px solid #e5e7eb; 
-      border-radius: 12px; 
-      box-shadow: 0 4px 16px rgba(0,0,0,0.1); 
+
+    #stage {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      padding: 8px;
+      margin-bottom: 16px;
+      position: relative;
     }
-    .btn { 
-      display: inline-flex; 
-      align-items: center; 
-      justify-content: center; 
-      gap: 6px; 
-      padding: 8px 12px; 
-      border: 1px solid #e5e7eb; 
-      border-radius: 8px; 
-      background: #fff; 
-      color: #1e293b; 
-      font-weight: 600; 
-      font-size: 14px; 
-      transition: background-color 0.2s, transform 0.1s; 
-      touch-action: manipulation; 
+
+    .page-sizer {
+      position: relative;
+      width: var(--w);
+      height: var(--h);
+      margin: 0 auto;
     }
-    .btn-primary { background: #2563eb; color: #fff; border-color: #1d4ed8; }
-    .btn:hover { background: #f1f5f9; }
-    .btn-primary:hover { background: #1d4ed8; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .icon-btn { padding: 8px; }
-    #stage { 
-      background: #fff; 
-      border: 1px solid #e5e7eb; 
-      border-radius: 16px; 
-      padding: clamp(8px, 2vw, 12px); 
-      margin-bottom: 16px; 
-      position: relative; 
-      z-index: 10; 
+    .page {
+      position: relative;
+      width: var(--bw);
+      height: var(--bh);
+      transform-origin: top left;
+      transform: scale(var(--s));
     }
-    #pages { 
-      display: flex; 
-      flex-direction: column; 
-      gap: clamp(8px, 1.5vw, 12px); 
-      align-items: center; 
-      padding-bottom: 16px; 
-      position: relative; 
-      z-index: 15; 
+    .page canvas {
+      display: block;
+      border-radius: 4px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+      transform: translateZ(0);
     }
-    .page { position: relative; }
-    .page canvas { display: block; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-    .box { 
-      position: absolute; 
-      background: transparent; 
-      color: #1e293b; 
-      min-width: 25px; 
-      min-height: 16px; 
-      border-radius: 4px; 
-      padding: 2px 4px; 
-      line-height: 1.2; 
-      outline: none; 
-      overflow: hidden; 
-      white-space: pre-line; 
-      -webkit-user-select: text; 
-      user-select: text; 
-      font-size: clamp(10px, 2.5vw, 12px); 
-      touch-action: manipulation; 
+
+    .box {
+      position: absolute;
+      background: transparent;
+      color: #1e293b;
+      min-width: 25px;
+      min-height: 16px;
+      border-radius: 4px;
+      padding: 2px 4px;
+      line-height: 1.2;
+      outline: none;
+      overflow: hidden;
+      white-space: pre-wrap;
+      user-select: text;
+      touch-action: manipulation;
+      font-size: inherit;
+      font-family: Helvetica, Arial, sans-serif;
     }
     .box:focus { box-shadow: 0 0 0 3px var(--ring); }
-    .box.disabled {
-      background: #f1f5f9;
-      cursor: not-allowed;
-      opacity: 0.7;
-    }
-    .box.disabled::after {
-      content: 'Click "New Admission" or "Load As Copy" to edit';
-      position: absolute;
-      top: 100%;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #1e293b;
-      color: #fff;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-size: 10px;
-      white-space: nowrap;
-      display: none;
-    }
-    .box.disabled:hover::after {
-      display: block;
-    }
-    #saveBadge { 
-      position: fixed; 
-      bottom: 80px; 
-      right: 16px; 
-      z-index: 60; 
-      font-size: 14px; 
-      padding: 6px 12px; 
-      border-radius: 12px; 
-      background: #ecfdf5; 
-      color: #065f46; 
-      border: 1px solid #d1fae5; 
-      opacity: 0; 
-      transition: opacity 0.3s ease; 
-    }
-    #saveBadge.visible { opacity: 1; }
+    .box.disabled { background: #f1f5f9; opacity: .7; cursor: not-allowed; }
+
     #overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255,255,255,.8);
+      border-radius: 12px;
       z-index: 20;
-      background: rgba(255, 255, 255, 0.9);
-      font-size: 16px;
       font-weight: 600;
     }
     #overlay::before {
-      content: '';
-      display: inline-block;
-      width: 24px;
-      height: 24px;
-      border: 3px solid #ccc;
-      border-top-color: #2563eb;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin-right: 8px;
+      content:'';
+      width: 24px; height: 24px; margin-right: 8px;
+      border: 3px solid #ccc; border-top-color: #2563eb;
+      border-radius: 50%; animation: spin 1s linear infinite;
     }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #actionBar {
+      position: fixed; bottom: 16px; right: 16px; z-index: 50;
+      display: flex; gap: 8px; padding: 8px; background: rgba(255,255,255,.95);
+      border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.1);
     }
-    .modal { 
-      z-index: 2000;
+    .btn { display:inline-flex; align-items:center; gap:6px; padding:8px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; font-weight:600; }
+    .btn-primary { background:#2563eb; color:#fff; border-color:#1d4ed8; }
+    .btn:disabled { opacity:.5; cursor:not-allowed; }
+    select.btn { padding: 6px 8px; font-size: 14px; }
+
+    #saveBadge {
+      position: fixed; bottom: 80px; right: 16px; z-index: 60;
+      font-size: 14px; padding: 6px 12px; border-radius: 12px;
+      background: #ecfdf5; color:#065f46; border: 1px solid #d1fae5;
+      opacity: 0; transition: opacity .3s ease;
     }
-    #admissionsSection, #templatesSection { 
-      background: #fff; 
-      border: 1px solid #e5e7eb; 
-      border-radius: 16px; 
-      padding: 16px; 
-      box-shadow: 0 2px 8px rgba(0,0,0,0.05); 
-      margin-bottom: 16px;
-    }
-    @media print { 
-      body { background: #fff; } 
-      #chrome > *:not(#stage) { display: none !important; } 
-      #stage { border: 0; padding: 0; margin: 0; } 
-      .page canvas { box-shadow: none; } 
-    }
-    @media (max-width: 640px) {
+    #saveBadge.visible { opacity: 1; }
+
+    @media (max-width:640px){
       #chrome { padding: 8px; }
-      #actionBar { 
-        left: 8px; 
-        right: 8px; 
-        bottom: 8px; 
-        border-radius: 8px; 
-        padding: 6px; 
-        flex-wrap: wrap;
-      }
+      #actionBar { left: 8px; right: 8px; bottom: 8px; padding: 6px; border-radius: 8px; flex-wrap: wrap; }
       .btn { padding: 6px 10px; font-size: 12px; }
-      .icon-btn { padding: 6px; }
-      #stage { padding: 4px; border-radius: 12px; }
-      .box { 
-        min-width: 20px; 
-        min-height: 14px; 
-        padding: 2px 3px; 
-        font-size: clamp(8px, 2vw, 10px); 
-      }
-      #saveBadge { 
-        bottom: 64px; 
-        font-size: 12px; 
-        padding: 4px 8px; 
-      }
-      #admissionsSection, #templatesSection { padding: 12px; border-radius: 12px; }
+      #stage { padding: 8px; }
+    }
+
+    @media print {
+      body, #chrome, #stage, .page-sizer, .page, .box, canvas { display: none !important; }
     }
   </style>
 </head>
 <body class="min-h-screen">
   <div id="chrome" class="space-y-4">
     <header class="text-center pt-4">
-      <h1 class="text-2xl font-bold text-slate-900">Admission Form</h1>
+      <h1 class="text-2xl font-bold">Admission Form</h1>
       <p class="text-slate-600 text-sm">Fill and manage admission forms and templates</p>
     </header>
 
-    <div id="stage" class="relative rounded-2xl border border-slate-200 bg-white">
-      <div id="pages" class="relative">
-        <div id="overlay" class="absolute inset-0 flex items-center justify-center text-slate-600 bg-white/70 rounded-2xl">Loading…</div>
+    <div id="stage" class="relative">
+      <div id="pages" class="flex flex-col items-center gap-3 relative">
+        <div id="overlay">Loading…</div>
       </div>
     </div>
 
-    <div id="admissionsSection">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-bold text-slate-900">Admissions</h2>
+    <section id="admissionsSection" class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-lg font-bold">Admissions</h2>
       </div>
-      <div id="admissionsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
-    </div>
+      <div id="admissionsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+    </section>
 
-    <div id="templatesSection">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-bold text-slate-900">Templates</h2>
+    <section id="templatesSection" class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-lg font-bold">Templates</h2>
       </div>
-      <div id="templatesList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
-    </div>
+      <div id="templatesList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+    </section>
   </div>
 
   <div id="actionBar">
     <button id="newAdmissionBtn" class="btn btn-primary">New Admission</button>
     <button id="newTemplateBtn" class="btn btn-primary">New Template</button>
     <button id="saveBtn" class="btn btn-primary">Save</button>
-    <button id="printBtn" class="btn icon-btn" title="Print">
-      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4H7v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H7a2 2 0 00-2 2v4h12z"></path>
-      </svg>
-    </button>
-    <button id="exportBtn" class="btn icon-btn" title="Download PDF">
-      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-      </svg>
-    </button>
-    <button id="copyTextBtn" class="btn icon-btn" title="Copy Text">
-      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
-      </svg>
-    </button>
+    <select id="fontSizeSelector" class="btn">
+      <option value="8">8px</option>
+      <option value="9">9px</option>
+      <option value="10">10px</option>
+      <option value="11">11px</option>
+      <option value="12">12px</option>
+      <option value="13">13px</option>
+      <option value="14" selected>14px</option>
+      <option value="15">15px</option>
+      <option value="16">16px</option>
+      <option value="17">17px</option>
+      <option value="18">18px</option>
+      <option value="20">20px</option>
+    </select>
+    <select id="lineHeightSelector" class="btn">
+      <option value="1.0">1.0</option>
+      <option value="1.1">1.1</option>
+      <option value="1.2" selected>1.2</option>
+      <option value="1.3">1.3</option>
+      <option value="1.4">1.4</option>
+      <option value="1.5">1.5</option>
+    </select>
+    <button id="printBtn" class="btn" title="Print">Print</button>
+    <button id="exportBtn" class="btn" title="Download PDF">Download</button>
+    <button id="copyTextBtn" class="btn" title="Copy Text">Copy Text</button>
   </div>
-  <span id="saveBadge" class="hidden">Saved</span>
+  <span id="saveBadge" class="">Saved</span>
 
   <script>
-    // ====== CONFIG ======
+    // ========= CONFIG =========
     const PDF_URL = 'https://raw.githubusercontent.com/nuhadwrk/admission/main/Admission.pdf';
+    const ANCHORS_URL = 'https://raw.githubusercontent.com/nuhadwrk/admission/main/anchors.json';
+
     const firebaseConfig = {
       apiKey: "AIzaSyCVX1eynTqjloTeEOUNPZ4ctn99VkMXAhU",
       authDomain: "admission-8236a.firebaseapp.com",
@@ -257,206 +206,170 @@
       appId: "1:1095611649881:web:f9e6f82ba6f469decd0648"
     };
 
-    // ====== Elements ======
-    const newAdmissionBtn = document.getElementById('newAdmissionBtn');
-    const newTemplateBtn = document.getElementById('newTemplateBtn');
-    const saveBtn = document.getElementById('saveBtn');
-    const printBtn = document.getElementById('printBtn');
-    const exportBtn = document.getElementById('exportBtn');
-    const copyTextBtn = document.getElementById('copyTextBtn');
-    const stage = document.getElementById('stage');
+    // ========= ELEMENTS =========
     const pagesRoot = document.getElementById('pages');
-    const overlay = document.getElementById('overlay');
+    const overlay   = document.getElementById('overlay');
+    const stage     = document.getElementById('stage');
     const saveBadge = document.getElementById('saveBadge');
-    const admissionsList = document.getElementById('admissionsList');
-    const templatesList = document.getElementById('templatesList');
+    const newAdmissionBtn = document.getElementById('newAdmissionBtn');
+    const newTemplateBtn  = document.getElementById('newTemplateBtn');
+    const saveBtn         = document.getElementById('saveBtn');
+    const printBtn        = document.getElementById('printBtn');
+    const exportBtn       = document.getElementById('exportBtn');
+    const copyTextBtn     = document.getElementById('copyTextBtn');
+    const fontSizeSelector = document.getElementById('fontSizeSelector');
+    const lineHeightSelector = document.getElementById('lineHeightSelector');
+    const admissionsList  = document.getElementById('admissionsList');
+    const templatesList   = document.getElementById('templatesList');
 
-    // ====== State ======
+    // ========= STATE =========
     let pdfDoc = null;
-    let fileKey = 'Admission';
     let anchorsByPage = {};
-    let values = {};
-    let currentScale = 1;
-    let currentDPR = Math.min(window.devicePixelRatio || 1, 1.5);
-    let lastStageW = 0;
-    let docRef = null;
-    let currentAdmissionId = null;
-    let firebaseInitialized = false;
-    let isInitialRender = true;
-    let isTemplateMode = false;
+    let values = { fontSize: 14, lineHeight: 1.2 }; // Default font size and line height
+    let fileKey = 'Admission';
+    let db = null, firebaseInitialized = false;
+    let docRef = null, currentAdmissionId = null, isTemplateMode = false, isNewTemplate = false;
 
-    // ====== Firebase handles ======
-    let fbApp, db;
+    let baseW = 0, baseH = 0;
+    let scale = 1;
+    const DPR = Math.min(window.devicePixelRatio || 1, 2);
 
-    // ====== Helpers ======
-    function setEnabled(enabled) {
-      [newAdmissionBtn, newTemplateBtn, saveBtn, printBtn, exportBtn, copyTextBtn].forEach(b => b.disabled = !enabled);
+    // ========= HELPERS =========
+    function showSavedBadge(msg='Saved'){
+      saveBadge.textContent = msg;
+      saveBadge.classList.add('visible');
+      clearTimeout(showSavedBadge._t);
+      showSavedBadge._t = setTimeout(()=>saveBadge.classList.remove('visible'), 1200);
     }
 
-    function setEditable(editable) {
-      document.querySelectorAll('.box').forEach(tb => {
+    function setEditable(editable){
+      document.querySelectorAll('.box').forEach(tb=>{
         tb.contentEditable = editable;
         tb.classList.toggle('disabled', !editable);
-        tb.disabled = !editable;
       });
     }
 
-    function download(filename, data, type = 'application/pdf') {
-      const blob = new Blob([data], { type });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = filename;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    function snap(n){ return Math.round(n*2)/2; }
+
+    function updateFontSize(fpt){
+      values.fontSize = parseInt(fpt);
+      document.querySelectorAll('.box').forEach(tb=>{
+        tb.style.fontSize = values.fontSize + 'px';
+      });
+      if (docRef) autoSaveValues();
     }
 
-    function showSavedBadge(message = 'Saved') {
-      saveBadge.textContent = message;
-      saveBadge.classList.add('visible');
-      clearTimeout(showSavedBadge._t);
-      showSavedBadge._t = setTimeout(() => {
-        saveBadge.textContent = 'Saved';
-        saveBadge.classList.remove('visible');
-      }, 1200);
+    function updateLineHeight(lh){
+      values.lineHeight = parseFloat(lh);
+      document.querySelectorAll('.box').forEach(tb=>{
+        tb.style.lineHeight = String(values.lineHeight.toFixed(1));
+      });
+      if (docRef) autoSaveValues();
     }
 
-    function copyFormText() {
-      const fieldOrder = [
-        { key: 'complains', order: 1 },
-        { key: 'hopi', order: 2 },
-        { key: 'pasthx', order: 3 },
-        { key: 'personalhx', order: 4 },
-        { key: 'fhx', order: 5 },
-        { key: 'obs', order: 6 },
-        { key: 'ge', order: 7 },
-        { key: 'cvs', order: 8 },
-        { key: 'rs', order: 9 },
-        { key: 'pa', order: 10 },
-        { key: 'pelvis', order: 11 },
-        { key: 'cns', order: 12 },
-        { key: 'le', order: 13 },
-        { key: 'txhx', order: 14 },
-        { key: 'provdx', order: 15 },
-        { key: 'dx', order: 16 },
-        { key: 'management', order: 17 },
-        { key: 'management2', order: 18 }
-      ];
-
-      const text = fieldOrder
-        .sort((a, b) => a.order - b.order)
-        .filter(field => values[field.key] && values[field.key].toString().trim())
-        .map(field => values[field.key].toString().trim())
-        .join('\n');
-
-      if (!text) {
-        alert('No text to copy.');
-        return;
+    // ========= INITIALIZE FIREBASE =========
+    async function ensureFirebase(){
+      try {
+        firebase.initializeApp(firebaseConfig);
+        db = firebase.firestore();
+        firebaseInitialized = true;
+      } catch (e){
+        console.warn('Firebase init failed, using local only:', e.message);
+        firebaseInitialized = false; db = null;
       }
-      if (!navigator.clipboard) {
-        alert('Clipboard API not supported in this browser.');
-        return;
-      }
-      navigator.clipboard.writeText(text)
-        .then(() => {
-          showSavedBadge('Text Copied');
-        })
-        .catch(e => {
-          console.error('Copy to clipboard failed:', e);
-          alert('Failed to copy text: ' + e.message);
-        });
     }
 
-    // ====== Scale + Render ======
-    async function renderAllPages() {
-      console.log('Rendering pages');
-      const cs = getComputedStyle(stage);
-      const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
-      const stageWExact = Math.max(stage.clientWidth - padX, 280);
-      if (Math.abs(stageWExact - lastStageW) < 5) return;
-      lastStageW = stageWExact;
+    // ========= PAGE CREATION =========
+    async function createPages(){
+      const page1 = await pdfDoc.getPage(1);
+      const v1 = page1.getViewport({ scale: 1 });
+      baseW = Math.round(v1.width);
+      baseH = Math.round(v1.height);
 
       pagesRoot.innerHTML = '';
-      overlay.classList.remove('hidden');
-      overlay.textContent = 'Rendering pages…';
-      try {
-        const page1 = await pdfDoc.getPage(1);
-        const v1 = page1.getViewport({ scale: 1 });
-        currentScale = stageWExact / v1.width;
-        currentDPR = Math.min(window.devicePixelRatio || 1, 1.5);
+      for(let p=1; p<=pdfDoc.numPages; p++){
+        const page = await pdfDoc.getPage(p);
+        const vCSS = page.getViewport({ scale: 1 });
+        const vHiDPI = page.getViewport({ scale: DPR });
 
-        for (let p = 1; p <= pdfDoc.numPages; p++) {
-          const page = await pdfDoc.getPage(p);
-          const vpCSS = page.getViewport({ scale: currentScale });
-          const vpHiDPI = page.getViewport({ scale: currentScale * currentDPR });
+        const sizer = document.createElement('div');
+        sizer.className = 'page-sizer';
+        sizer.style.setProperty('--bw', baseW + 'px');
+        sizer.style.setProperty('--bh', baseH + 'px');
 
-          const pageWrap = document.createElement('div');
-          pageWrap.className = 'page';
-          pageWrap.dataset.page = String(p);
-          pageWrap.style.width = vpCSS.width + 'px';
-          pageWrap.style.height = vpCSS.height + 'px';
+        const wrap = document.createElement('div');
+        wrap.className = 'page';
+        wrap.style.setProperty('--bw', baseW + 'px');
+        wrap.style.setProperty('--bh', baseH + 'px');
+        wrap.style.setProperty('--s', '1');
 
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d');
-          canvas.width = Math.round(vpHiDPI.width);
-          canvas.height = Math.round(vpHiDPI.height);
-          canvas.style.width = vpCSS.width + 'px';
-          canvas.style.height = vpCSS.height + 'px';
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(vHiDPI.width);
+        canvas.height = Math.round(vHiDPI.height);
+        canvas.style.width = vCSS.width + 'px';
+        canvas.style.height = vCSS.height + 'px';
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
 
-          pageWrap.appendChild(canvas);
-          pagesRoot.appendChild(pageWrap);
-          await page.render({ canvasContext: ctx, viewport: vpHiDPI }).promise;
+        wrap.appendChild(canvas);
+        sizer.appendChild(wrap);
+        pagesRoot.appendChild(sizer);
 
-          (anchorsByPage[p] || []).forEach(a => spawnBox(p, a));
-        }
-        if (!isInitialRender) applyValuesToDom();
-        setEditable(!!docRef);
-      } catch (e) {
-        console.error('Render pages failed:', e);
-        overlay.textContent = 'Failed to render pages. Click to retry.';
-        overlay.style.cursor = 'pointer';
-        overlay.addEventListener('click', () => {
-          overlay.style.cursor = 'auto';
-          renderAllPages();
-        }, { once: true });
-      } finally {
-        overlay.classList.add('hidden');
-        isInitialRender = false;
-        console.log('Overlay hidden after rendering');
+        await page.render({ canvasContext: ctx, viewport: vHiDPI }).promise;
+
+        (anchorsByPage[p] || []).forEach(a => spawnBox(wrap, a, p));
       }
+
+      setScale();
     }
 
-    function toScreen(a, cw, ch) {
-      return { left: a.x * cw, top: a.y * ch, width: a.w * cw, height: a.h * ch };
+    // ========= RESIZE HANDLING =========
+    function setScale(){
+      const padX = 16;
+      const avail = Math.max(stage.clientWidth - padX, 280);
+      scale = avail / baseW;
+      document.querySelectorAll('.page-sizer').forEach(sizer=>{
+        sizer.style.setProperty('--w', (baseW*scale) + 'px');
+        sizer.style.setProperty('--h', (baseH*scale) + 'px');
+      });
+      document.querySelectorAll('.page').forEach(page=>{
+        page.style.setProperty('--s', String(scale));
+      });
     }
 
-    function spawnBox(pageNo, a) {
-      const pageWrap = [...pagesRoot.children].find(el => el.dataset.page == String(pageNo));
-      if (!pageWrap) return;
+    window.addEventListener('resize', ()=>{ if(pdfDoc) setScale(); });
+    window.addEventListener('orientationchange', ()=> setTimeout(setScale, 100));
+    if (window.visualViewport){
+      let t; window.visualViewport.addEventListener('resize', ()=>{ clearTimeout(t); t=setTimeout(setScale,100); });
+    }
+
+    // ========= OVERLAY BOXES =========
+    function spawnBox(pageWrap, a, pageNo){
       const tb = document.createElement('div');
       tb.className = 'box';
-      tb.contentEditable = !!docRef;
       tb.dataset.page = String(pageNo);
       tb.dataset.name = a.name || '';
 
-      const fpt = a.fpt || 14;
-      tb.style.fontSize = (fpt * currentScale) + 'px';
-      tb.style.lineHeight = (a.lh || 1.2).toString();
+      tb.style.fontSize = (values.fontSize || a.fpt || 14) + 'px';
+      tb.style.lineHeight = String((values.lineHeight || a.lh || 1.2).toFixed(1));
 
-      const s = toScreen(a, pageWrap.clientWidth, pageWrap.clientHeight);
-      tb.style.left = s.left + 'px';
-      tb.style.top = s.top + 'px';
-      tb.style.width = s.width + 'px';
-      tb.style.height = s.height + 'px';
-      tb.innerText = isInitialRender ? '' : (values[a.name || ''] || '');
+      const left = snap(a.x * baseW);
+      const top = snap(a.y * baseH);
+      const width = snap(a.w * baseW);
+      const height = snap(a.h * baseH);
+      tb.style.left = left + 'px';
+      tb.style.top = top + 'px';
+      tb.style.width = width + 'px';
+      tb.style.height = height + 'px';
 
-      tb.addEventListener('input', () => {
-        const k = tb.dataset.name;
-        if (k) values[k] = tb.innerText;
+      tb.innerText = values[a.name || ''] || '';
+
+      tb.addEventListener('input', ()=>{
+        const k = tb.dataset.name; if(k) values[k] = tb.innerText;
         if (docRef) autoSaveValues();
       });
-      tb.addEventListener('blur', () => {
-        const k = tb.dataset.name;
-        if (k) values[k] = tb.innerText;
+      tb.addEventListener('blur', ()=>{
+        const k = tb.dataset.name; if(k) values[k] = tb.innerText;
         if (docRef) autoSaveValues();
       });
 
@@ -464,921 +377,439 @@
       return tb;
     }
 
-    function applyValuesToDom() {
-      document.querySelectorAll('.box').forEach(tb => {
+    function applyValuesToDom(){
+      document.querySelectorAll('.box').forEach(tb=>{
         const k = tb.dataset.name || '';
-        if (k && Object.prototype.hasOwnProperty.call(values, k)) {
-          const current = tb.innerText || '';
+        if (k && Object.prototype.hasOwnProperty.call(values,k)){
           const next = values[k] || '';
-          if (current !== next) tb.innerText = next;
+          if ((tb.innerText||'') !== next) tb.innerText = next;
         }
+        tb.style.fontSize = (values.fontSize || 14) + 'px';
+        tb.style.lineHeight = String((values.lineHeight || 1.2).toFixed(1));
       });
     }
 
-    // ===== Firestore persistence for VALUES (no auth) =====
-    async function ensureFirebase() {
-      try {
-        console.log('Attempting Firebase initialization...');
-        const requiredFields = ['apiKey', 'authDomain', 'projectId', 'appId'];
-        for (const field of requiredFields) {
-          if (!firebaseConfig[field]) {
-            throw new Error(`Missing required Firebase config field: ${field}`);
+    // ========= LOAD/PRINT/EXPORT =========
+    function wrapTextBlocks(text){ return text.replace(/\r/g,'').split('\n'); }
+    function wrapLineToWidth(text, font, size, maxWidth) {
+      const words = text.split(/\s+/), lines=[], W=t=>font.widthOfTextAtSize(t,size);
+      let line=''; for (const w of words){ const t=line?line+' '+w:w;
+        if (W(t)<=maxWidth) line=t;
+        else { if(line) lines.push(line);
+          if (W(w)>maxWidth){ let cl=''; for(const c of w){ const t2=cl+c; if(W(t2)<=maxWidth) cl=t2; else { if(cl) lines.push(cl); cl=c; } }
+            if (cl) line=cl; else line='';
+          } else line=w;
+        }
+      }
+      if(line) lines.push(line); return lines;
+    }
+
+    async function buildPdfBlob(){
+      const pdfBytes = await fetch(PDF_URL).then(r=>r.arrayBuffer());
+      const pdf = await PDFLib.PDFDocument.load(pdfBytes);
+      const font = await pdf.embedFont(PDFLib.StandardFonts.Helvetica);
+
+      for(let p=1; p<=pdf.getPageCount(); p++){
+        const page = pdf.getPages()[p-1];
+        const {width, height} = page.getSize();
+        for (const a of (anchorsByPage[p]||[])){
+          const name = a.name || '';
+          const text = (values[name] || '').toString();
+          if (!text) continue;
+          const fpt = values.fontSize || a.fpt || 14;
+          const lh = values.lineHeight || a.lh || 1.2;
+          const pad = 2;
+          const boxW = a.w * width - pad * 2;
+          const boxH = a.h * height - pad * 2;
+          const startX = a.x * width + pad;
+          const topY = height - a.y * height - pad;
+          const blocks = wrapTextBlocks(text);
+          let y = topY - fpt;
+          outer: for (const b of blocks){
+            const lines = wrapLineToWidth(b, font, fpt, boxW);
+            for (const ln of lines){
+              if ((topY - y) > boxH + fpt * 0.2) break outer;
+              page.drawText(ln, { x: startX, y, size: fpt, font, color: PDFLib.rgb(0,0,0) });
+              y -= fpt * lh;
+            }
+            y -= fpt * (lh - 1);
           }
         }
-        fbApp = firebase.initializeApp(firebaseConfig);
-        db = firebase.firestore();
-        firebaseInitialized = true;
-        console.log('Firebase fully initialized (no auth)');
-      } catch (e) {
-        console.error('Firebase initialization failed:', e.message, e.code || 'No code');
-        alert(`Failed to initialize Firebase: ${e.message}. Falling back to local storage.`);
-        firebaseInitialized = false;
-        db = null;
       }
+      const out = await pdf.save();
+      return new Blob([out], { type: 'application/pdf' });
     }
 
-    async function loadValuesFromFirestore(docRef) {
-      if (!docRef || !firebaseInitialized) return;
+    async function doPrint(){
       try {
-        console.log('Loading values for docRef:', docRef.path);
-        const snap = await docRef.get();
-        if (snap.exists) {
-          const data = snap.data();
-          values = { ...data?.values } || {};
-          applyValuesToDom();
-          console.log('Loaded values from Firestore:', values);
+        overlay.classList.remove('hidden'); overlay.textContent='Preparing print…';
+        const blob = await buildPdfBlob();
+        const url = URL.createObjectURL(blob);
+        const w = window.open(url, '_blank');
+        if (w) {
+          setTimeout(()=>{ try { w.focus(); w.print(); } catch {} }, 400);
         } else {
-          console.warn('No data found for docRef:', docRef.path);
-          values = {};
+          const iframe = document.createElement('iframe');
+          iframe.style.position='fixed'; iframe.style.right='0'; iframe.style.bottom='0';
+          iframe.style.width='0'; iframe.style.height='0'; iframe.style.border='0';
+          iframe.onload = ()=> setTimeout(()=>{ try { iframe.contentWindow?.print(); } catch {} }, 150);
+          iframe.src = url; document.body.appendChild(iframe);
+          setTimeout(()=> URL.revokeObjectURL(url), 20000);
         }
-      } catch (e) {
-        console.error('Load Firestore values failed:', e.message, e.code || 'No code', e.stack);
-        alert('Failed to load values: ' + e.message);
-        throw e;
+      } catch (e){
+        alert('Failed to print: ' + e.message);
+      } finally {
+        overlay.classList.add('hidden');
       }
     }
 
-    async function saveValuesToFirestore(docRef, displayId, type) {
+    function download(filename, data, type='application/pdf'){
+      const blob = new Blob([data], {type});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      setTimeout(()=> URL.revokeObjectURL(a.href), 8000);
+    }
+    async function doExport(){
+      try {
+        overlay.classList.remove('hidden'); overlay.textContent='Preparing download…';
+        const blob = await buildPdfBlob();
+        download(fileKey + '-filled.pdf', blob);
+      } catch(e){ alert('Export failed: ' + e.message); }
+      finally { overlay.classList.add('hidden'); }
+    }
+
+    // ========= STORAGE =========
+    async function saveValuesToFirestore(docRef, displayId, type){
       if (!docRef || !firebaseInitialized) return;
       try {
-        console.log('Saving values to Firestore:', values, 'for docRef:', docRef.path);
         await docRef.set({
-          displayId,
-          type,
-          values: { ...values },
-          fileKey,
+          displayId, type, values: { ...values }, fileKey,
           updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
-        console.log('Saved values to Firestore');
-      } catch (e) {
-        console.error('Save to Firestore failed:', e.message, e.code || 'No code');
-        alert('Failed to save values: ' + e.message);
-      }
+      } catch(e){ console.warn('Firestore save failed:', e.message); }
     }
 
-    function autoSaveValues() {
+    function autoSaveValues(){
       if (!docRef) return;
       clearTimeout(autoSaveValues._t);
-      autoSaveValues._t = setTimeout(async () => {
+      autoSaveValues._t = setTimeout(async ()=>{
         try {
           localStorage.setItem('values:' + fileKey, JSON.stringify(values));
           await saveValuesToFirestore(docRef, currentAdmissionId, isTemplateMode ? 'template' : 'admission');
-          const storageKey = isTemplateMode ? 'templates:' + fileKey : 'admissions:' + fileKey;
-          let items = JSON.parse(localStorage.getItem(storageKey) || '{}');
-          items[currentAdmissionId] = { 
-            displayId: items[currentAdmissionId]?.displayId || currentAdmissionId, 
-            type: isTemplateMode ? 'template' : 'admission', 
-            values: { ...values }, 
-            fileKey, 
-            updatedAt: new Date().toISOString() 
+          const key = isTemplateMode ? 'templates:' + fileKey : 'admissions:' + fileKey;
+          const items = JSON.parse(localStorage.getItem(key) || '{}');
+          items[currentAdmissionId] = {
+            displayId: items[currentAdmissionId]?.displayId || currentAdmissionId,
+            type: isTemplateMode ? 'template' : 'admission',
+            values: { ...values }, fileKey, updatedAt: new Date().toISOString()
           };
-          localStorage.setItem(storageKey, JSON.stringify(items));
+          localStorage.setItem(key, JSON.stringify(items));
           showSavedBadge();
-        } catch (e) {
-          console.error('Auto-save failed:', e);
-          alert('Failed to auto-save: ' + e.message);
-        }
+        } catch(e){ alert('Auto-save failed: ' + e.message); }
       }, 400);
     }
 
-    async function showNewAdmissionModal(isTemplate = false) {
-      console.log(`Opening ${isTemplate ? 'new template' : 'new admission'} modal`);
-      overlay.classList.add('hidden');
-      const modal = document.createElement('div');
-      modal.className = 'modal fixed inset-0 flex items-center justify-center bg-black/50';
-      const content = document.createElement('div');
-      content.className = 'bg-white p-6 rounded-lg shadow-xl max-w-sm w-full';
-      content.innerHTML = `
-        <h2 class="text-lg font-bold mb-4">${isTemplate ? 'New Template' : 'New Admission'}</h2>
-        <label class="block mb-2 text-sm font-medium text-slate-700">Age (years)</label>
-        <input id="ageInput" type="number" class="w-full border border-slate-300 p-2 mb-2 rounded-lg focus:ring-2 focus:ring-blue-500">
-        <label class="block mb-2 text-sm font-medium text-slate-700">Sex</label>
-        <select id="sexSelect" class="w-full border border-slate-300 p-2 mb-2 rounded-lg focus:ring-2 focus:ring-blue-500">
-          <option value="M">Male</option>
-          <option value="F">Female</option>
-          <option value="O">Other</option>
-        </select>
-        <label class="block mb-2 text-sm font-medium text-slate-700">Diagnosis</label>
-        <input id="diagInput" type="text" class="w-full border border-slate-300 p-2 mb-4 rounded-lg focus:ring-2 focus:ring-blue-500">
-        <button id="createBtn" class="btn btn-primary w-full">Create</button>
-        <button id="cancelBtn" class="btn w-full mt-2">Cancel</button>
-      `;
-      modal.appendChild(content);
-      document.body.appendChild(modal);
-
-      const createBtn = content.querySelector('#createBtn');
-      const cancelBtn = content.querySelector('#cancelBtn');
-      const ageInput = content.querySelector('#ageInput');
-      const sexSelect = content.querySelector('#sexSelect');
-      const diagInput = content.querySelector('#diagInput');
-
-      cancelBtn.addEventListener('click', () => {
-        console.log('Cancel button clicked, closing modal');
-        modal.remove();
-      });
-
-      createBtn.addEventListener('click', async () => {
-        console.log('Create button clicked');
-        createBtn.disabled = true;
-        createBtn.textContent = 'Creating...';
-        overlay.classList.remove('hidden');
-        overlay.textContent = `Creating ${isTemplate ? 'template' : 'admission'}…`;
-        const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
-        try {
-          const age = ageInput.value.trim();
-          const sex = sexSelect.value;
-          const diagnosis = diagInput.value.trim().toUpperCase();
-          console.log('Input values:', { age, sex, diagnosis });
-          if (!age || !sex || !diagnosis) {
-            console.warn('Validation failed: Missing required fields');
-            alert('All fields are required.');
-            return;
-          }
-          if (!/^[A-Z0-9\s]+$/.test(diagnosis)) {
-            console.warn('Validation failed: Invalid diagnosis');
-            alert('Diagnosis must be alphanumeric.');
-            return;
-          }
-          const now = new Date();
-          const day = now.getDate();
-          const month = now.getMonth() + 1;
-          const year = now.getFullYear();
-          const hours = now.getHours().toString().padStart(2, '0');
-          const minutes = now.getMinutes().toString().padStart(2, '0');
-          const displayId = `${age}y/${sex} ${diagnosis} (${day}-${month}-${year} ${hours}:${minutes})`;
-          const docId = displayId.replace(/ /g, '_').replace(/\//g, '-').replace(/[\(\)]/g, '');
-          console.log('Generated ID:', displayId, 'Doc ID:', docId);
-
-          if (firebaseInitialized && db) {
-            const newDocRef = db.collection('admissions').doc(docId);
-            console.log('Writing to Firestore at:', newDocRef.path);
-            await newDocRef.set({
-              displayId,
-              type: isTemplate ? 'template' : 'admission',
-              values: {},
-              fileKey,
-              updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
-            console.log(`${isTemplate ? 'Template' : 'Admission'} created in Firestore:`, docId);
-            docRef = newDocRef;
-            currentAdmissionId = docId;
-            isTemplateMode = isTemplate;
-            localStorage.setItem('currentAdmission:' + fileKey, docId);
-            values = {};
-            applyValuesToDom();
-            setEditable(true);
-            await (isTemplate ? loadTemplates() : loadAdmissions());
-          } else {
-            console.warn('Firebase not initialized, using localStorage');
-            const storageKey = isTemplate ? 'templates:' + fileKey : 'admissions:' + fileKey;
-            let items = JSON.parse(localStorage.getItem(storageKey) || '{}');
-            items[docId] = { 
-              displayId, 
-              type: isTemplate ? 'template' : 'admission', 
-              values: {}, 
-              fileKey, 
-              updatedAt: now.toISOString() 
-            };
-            localStorage.setItem(storageKey, JSON.stringify(items));
-            console.log(`${isTemplate ? 'Template' : 'Admission'} created locally:`, docId);
-            values = {};
-            currentAdmissionId = docId;
-            isTemplateMode = isTemplate;
-            localStorage.setItem('currentAdmission:' + fileKey, docId);
-            applyValuesToDom();
-            setEditable(true);
-            await (isTemplate ? loadTemplates() : loadAdmissions());
-          }
-
-          showSavedBadge(isTemplate ? 'Template Created' : 'Admission Created');
-          modal.remove();
-          console.log('Modal closed, creation successful');
-        } catch (e) {
-          console.error(`${isTemplate ? 'Template' : 'Admission'} creation failed:`, e.message, e.code || 'No code');
-          alert(`Failed to create ${isTemplate ? 'template' : 'admission'}: ` + e.message);
-        } finally {
-          await minDisplayTime;
-          createBtn.disabled = false;
-          createBtn.textContent = 'Create';
-          overlay.classList.add('hidden');
-          console.log('Create button state restored');
-        }
-      });
-    }
-
-    async function showCopyModal(sourceDocId, sourceData) {
-      console.log('Opening copy modal for:', sourceDocId);
-      overlay.classList.add('hidden');
-      const modal = document.createElement('div');
-      modal.className = 'modal fixed inset-0 flex items-center justify-center bg-black/50';
-      const content = document.createElement('div');
-      content.className = 'bg-white p-6 rounded-lg shadow-xl max-w-sm w-full';
-      content.innerHTML = `
-        <h2 class="text-lg font-bold mb-4">New Admission (Copy)</h2>
-        <label class="block mb-2 text-sm font-medium text-slate-700">Age (years)</label>
-        <input id="ageInput" type="number" class="w-full border border-slate-300 p-2 mb-2 rounded-lg focus:ring-2 focus:ring-blue-500">
-        <label class="block mb-2 text-sm font-medium text-slate-700">Sex</label>
-        <select id="sexSelect" class="w-full border border-slate-300 p-2 mb-2 rounded-lg focus:ring-2 focus:ring-blue-500">
-          <option value="M">Male</option>
-          <option value="F">Female</option>
-          <option value="O">Other</option>
-        </select>
-        <label class="block mb-2 text-sm font-medium text-slate-700">Diagnosis</label>
-        <input id="diagInput" type="text" class="w-full border border-slate-300 p-2 mb-4 rounded-lg focus:ring-2 focus:ring-blue-500">
-        <button id="createBtn" class="btn btn-primary w-full">Create Copy</button>
-        <button id="cancelBtn" class="btn w-full mt-2">Cancel</button>
-      `;
-      modal.appendChild(content);
-      document.body.appendChild(modal);
-
-      const createBtn = content.querySelector('#createBtn');
-      const cancelBtn = content.querySelector('#cancelBtn');
-      const ageInput = content.querySelector('#ageInput');
-      const sexSelect = content.querySelector('#sexSelect');
-      const diagInput = content.querySelector('#diagInput');
-
-      cancelBtn.addEventListener('click', () => {
-        console.log('Cancel button clicked, closing modal');
-        modal.remove();
-      });
-
-      createBtn.addEventListener('click', async () => {
-        console.log('Create copy button clicked');
-        createBtn.disabled = true;
-        createBtn.textContent = 'Creating...';
-        overlay.classList.remove('hidden');
-        overlay.textContent = 'Creating copy…';
-        const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
-        try {
-          const age = ageInput.value.trim();
-          const sex = sexSelect.value;
-          const diagnosis = diagInput.value.trim().toUpperCase();
-          console.log('Input values:', { age, sex, diagnosis });
-          if (!age || !sex || !diagnosis) {
-            console.warn('Validation failed: Missing required fields');
-            alert('All fields are required.');
-            return;
-          }
-          if (!/^[A-Z0-9\s]+$/.test(diagnosis)) {
-            console.warn('Validation failed: Invalid diagnosis');
-            alert('Diagnosis must be alphanumeric.');
-            return;
-          }
-          const now = new Date();
-          const day = now.getDate();
-          const month = now.getMonth() + 1;
-          const year = now.getFullYear();
-          const hours = now.getHours().toString().padStart(2, '0');
-          const minutes = now.getMinutes().toString().padStart(2, '0');
-          const displayId = `${age}y/${sex} ${diagnosis} (${day}-${month}-${year} ${hours}:${minutes})`;
-          const docId = displayId.replace(/ /g, '_').replace(/\//g, '-').replace(/[\(\)]/g, '');
-          console.log('Generated ID:', displayId, 'Doc ID:', docId);
-
-          values = { ...sourceData.values };
-          isTemplateMode = false;
-
-          if (firebaseInitialized && db) {
-            const newDocRef = db.collection('admissions').doc(docId);
-            console.log('Writing copy to Firestore at:', newDocRef.path);
-            await newDocRef.set({
-              displayId,
-              type: 'admission',
-              values: { ...values },
-              fileKey,
-              updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
-            console.log('Admission copy created in Firestore:', docId);
-            docRef = newDocRef;
-            currentAdmissionId = docId;
-            localStorage.setItem('currentAdmission:' + fileKey, docId);
-            await loadAdmissions();
-          } else {
-            console.warn('Firebase not initialized, using localStorage');
-            let items = JSON.parse(localStorage.getItem('admissions:' + fileKey) || '{}');
-            items[docId] = { 
-              displayId, 
-              type: 'admission', 
-              values: { ...values }, 
-              fileKey, 
-              updatedAt: now.toISOString() 
-            };
-            localStorage.setItem('admissions:' + fileKey, JSON.stringify(items));
-            console.log('Admission copy created locally:', docId);
-            currentAdmissionId = docId;
-            localStorage.setItem('currentAdmission:' + fileKey, docId);
-            await loadAdmissions();
-          }
-
-          applyValuesToDom();
-          setEditable(true);
-          showSavedBadge('Admission Copy Created');
-          modal.remove();
-          console.log('Modal closed, copy creation successful');
-        } catch (e) {
-          console.error('Admission copy creation failed:', e.message, e.code || 'No code');
-          alert('Failed to create admission copy: ' + e.message);
-        } finally {
-          await minDisplayTime;
-          createBtn.disabled = false;
-          createBtn.textContent = 'Create Copy';
-          overlay.classList.add('hidden');
-          console.log('Create button state restored');
-        }
-      });
-    }
-
-    async function loadAdmissions() {
-      console.log('Loading admissions');
-      overlay.classList.remove('hidden');
-      overlay.textContent = 'Loading admissions…';
-      const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
-      admissionsList.innerHTML = '';
-      if (!firebaseInitialized || !db) {
-        console.warn('Firebase not initialized, loading from localStorage');
-        let admissions = {};
-        try {
-          admissions = JSON.parse(localStorage.getItem('admissions:' + fileKey) || '{}');
-        } catch (e) {
-          console.error('Failed to parse admissions from localStorage:', e);
-          admissionsList.innerHTML = '<p class="text-slate-500">Error loading admissions.</p>';
-          await minDisplayTime;
-          overlay.classList.add('hidden');
-          return;
-        }
-        if (Object.keys(admissions).length === 0) {
-          admissionsList.innerHTML = '<p class="text-slate-500">No admissions yet.</p>';
-        } else {
-          Object.entries(admissions)
-            .filter(([_, data]) => data.type === 'admission')
-            .forEach(([id, data]) => {
-              const card = document.createElement('div');
-              card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
-              card.innerHTML = `
-                <h3 class="font-semibold text-slate-900">${data.displayId || id}</h3>
-                <p class="text-xs text-slate-500">Updated: ${new Date(data.updatedAt).toLocaleString()}</p>
-                <div class="mt-2 flex gap-2">
-                  <button class="load-btn btn btn-primary">Load</button>
-                  <button class="copy-btn btn">Load As Copy</button>
-                  <button class="delete-btn btn">Delete</button>
-                </div>
-              `;
-              card.querySelector('.load-btn').addEventListener('click', async () => {
-                console.log('Loading admission:', id);
-                overlay.classList.remove('hidden');
-                overlay.textContent = 'Loading admission…';
-                const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
-                try {
-                  values = { ...data.values } || {};
-                  applyValuesToDom();
-                  setEditable(true);
-                  currentAdmissionId = id;
-                  isTemplateMode = false;
-                  localStorage.setItem('currentAdmission:' + fileKey, id);
-                  if (firebaseInitialized && db) {
-                    docRef = db.collection('admissions').doc(id);
-                  }
-                  try {
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  } catch (e) {
-                    console.warn('Smooth scroll failed:', e);
-                    window.scroll(0, 0);
-                  }
-                  console.log('Admission loaded:', id);
-                } catch (e) {
-                  console.error('Failed to load admission:', e);
-                  alert('Failed to load admission: ' + e.message);
-                } finally {
-                  await minDisplayTime;
-                  overlay.classList.add('hidden');
-                }
-              });
-              card.querySelector('.copy-btn').addEventListener('click', async () => {
-                console.log('Load as copy for admission:', id);
-                showCopyModal(id, data);
-              });
-              card.querySelector('.delete-btn').addEventListener('click', async () => {
-                console.log('Delete button clicked for admission:', id);
-                if (id === currentAdmissionId) {
-                  console.warn('Cannot delete active admission:', id);
-                  alert('Cannot delete the active admission. Load another admission first.');
-                  return;
-                }
-                try {
-                  overlay.classList.remove('hidden');
-                  overlay.textContent = 'Deleting admission…';
-                  const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
-                  if (firebaseInitialized && db) {
-                    const admissionRef = db.collection('admissions').doc(id);
-                    console.log('Deleting from Firestore:', admissionRef.path);
-                    await admissionRef.delete();
-                    console.log('Admission deleted from Firestore:', id);
-                  }
-                  let admissions = JSON.parse(localStorage.getItem('admissions:' + fileKey) || '{}');
-                  delete admissions[id];
-                  localStorage.setItem('admissions:' + fileKey, JSON.stringify(admissions));
-                  console.log('Admission deleted from localStorage:', id);
-                  await loadAdmissions();
-                  showSavedBadge('Admission Deleted');
-                  await minDisplayTime;
-                } catch (e) {
-                  console.error('Delete admission failed:', e.message, e.code || 'No code');
-                  alert('Failed to delete admission: ' + e.message);
-                } finally {
-                  overlay.classList.add('hidden');
-                }
-              });
-              admissionsList.appendChild(card);
-            });
-          console.log('Admissions loaded from localStorage');
-        }
-        await minDisplayTime;
-        overlay.classList.add('hidden');
-        return;
-      }
+    async function manualSave(){
+      if (!docRef) return;
       try {
-        const admissionsCol = db.collection('admissions').where('type', '==', 'admission');
-        console.log('Loading admissions from Firestore');
-        const snap = await admissionsCol.get();
-        if (snap.empty) {
-          admissionsList.innerHTML = '<p class="text-slate-500">No admissions yet.</p>';
-        }
-        snap.forEach(doc => {
-          const data = doc.data();
-          const card = document.createElement('div');
-          card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
-          card.innerHTML = `
-            <h3 class="font-semibold text-slate-900">${data.displayId || doc.id}</h3>
-            <p class="text-xs text-slate-500">Updated: ${data.updatedAt?.toDate()?.toLocaleString() || 'N/A'}</p>
-            <div class="mt-2 flex gap-2">
-              <button class="load-btn btn btn-primary">Load</button>
-              <button class="copy-btn btn">Load As Copy</button>
-              <button class="delete-btn btn">Delete</button>
-            </div>
-          `;
-          card.querySelector('.load-btn').addEventListener('click', async () => {
-            console.log('Loading admission:', doc.id);
-            overlay.classList.remove('hidden');
-            overlay.textContent = 'Loading admission…';
-            const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
-            try {
-              docRef = doc.ref;
-              isTemplateMode = false;
-              await loadValuesFromFirestore(doc.ref);
-              setEditable(true);
-              currentAdmissionId = doc.id;
-              localStorage.setItem('currentAdmission:' + fileKey, doc.id);
-              try {
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              } catch (e) {
-                console.warn('Smooth scroll failed:', e);
-                window.scroll(0, 0);
-              }
-              console.log('Admission loaded:', doc.id);
-            } catch (e) {
-              console.error('Failed to load admission:', e);
-              alert('Failed to load admission: ' + e.message);
-            } finally {
-              await minDisplayTime;
-              overlay.classList.add('hidden');
-            }
-          });
-          card.querySelector('.copy-btn').addEventListener('click', async () => {
-            console.log('Load as copy for admission:', doc.id);
-            showCopyModal(doc.id, data);
-          });
-          card.querySelector('.delete-btn').addEventListener('click', async () => {
-            console.log('Delete button clicked for admission:', doc.id);
-            if (doc.id === currentAdmissionId) {
-              console.warn('Cannot delete active admission:', doc.id);
-              alert('Cannot delete the active admission. Load another admission first.');
-              return;
-            }
-            try {
-              overlay.classList.remove('hidden');
-              overlay.textContent = 'Deleting admission…';
-              const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
-              console.log('Deleting from Firestore:', doc.ref.path);
-              await doc.ref.delete();
-              console.log('Admission deleted from Firestore:', doc.id);
-              let admissions = JSON.parse(localStorage.getItem('admissions:' + fileKey) || '{}');
-              delete admissions[doc.id];
-              localStorage.setItem('admissions:' + fileKey, JSON.stringify(admissions));
-              console.log('Admission deleted from localStorage:', doc.id);
-              await loadAdmissions();
-              showSavedBadge('Admission Deleted');
-              await minDisplayTime;
-            } catch (e) {
-              console.error('Delete admission failed:', e.message, e.code || 'No code');
-              alert('Failed to delete admission: ' + e.message);
-            } finally {
-              overlay.classList.add('hidden');
-            }
-          });
-          admissionsList.appendChild(card);
-        });
-        console.log('Admissions loaded successfully');
-      } catch (e) {
-        console.error('Load admissions failed:', e.message, e.code || 'No code');
-        alert('Failed to load admissions: ' + e.message);
-        admissionsList.innerHTML = '<p class="text-slate-500">Error loading admissions.</p>';
-      } finally {
-        await minDisplayTime;
-        overlay.classList.add('hidden');
-      }
-    }
-
-    async function loadTemplates() {
-      console.log('Loading templates');
-      overlay.classList.remove('hidden');
-      overlay.textContent = 'Loading templates…';
-      const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
-      templatesList.innerHTML = '';
-      if (!firebaseInitialized || !db) {
-        console.warn('Firebase not initialized, loading from localStorage');
-        let templates = {};
-        try {
-          templates = JSON.parse(localStorage.getItem('templates:' + fileKey) || '{}');
-        } catch (e) {
-          console.error('Failed to parse templates from localStorage:', e);
-          templatesList.innerHTML = '<p class="text-slate-500">Error loading templates.</p>';
-          await minDisplayTime;
-          overlay.classList.add('hidden');
-          return;
-        }
-        if (Object.keys(templates).length === 0) {
-          templatesList.innerHTML = '<p class="text-slate-500">No templates yet.</p>';
-        } else {
-          Object.entries(templates)
-            .filter(([_, data]) => data.type === 'template')
-            .forEach(([id, data]) => {
-              const card = document.createElement('div');
-              card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
-              card.innerHTML = `
-                <h3 class="font-semibold text-slate-900">${data.displayId || id}</h3>
-                <p class="text-xs text-slate-500">Updated: ${new Date(data.updatedAt).toLocaleString()}</p>
-                <div class="mt-2 flex gap-2">
-                  <button class="load-btn btn btn-primary">Load</button>
-                  <button class="delete-btn btn">Delete</button>
-                </div>
-              `;
-              card.querySelector('.load-btn').addEventListener('click', async () => {
-                console.log('Loading template as copy:', id);
-                showCopyModal(id, data);
-              });
-              card.querySelector('.delete-btn').addEventListener('click', async () => {
-                console.log('Delete button clicked for template:', id);
-                if (id === currentAdmissionId && isTemplateMode) {
-                  console.warn('Cannot delete active template:', id);
-                  alert('Cannot delete the active template. Load another template or admission first.');
-                  return;
-                }
-                try {
-                  overlay.classList.remove('hidden');
-                  overlay.textContent = 'Deleting template…';
-                  const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
-                  if (firebaseInitialized && db) {
-                    const templateRef = db.collection('admissions').doc(id);
-                    console.log('Deleting from Firestore:', templateRef.path);
-                    await templateRef.delete();
-                    console.log('Template deleted from Firestore:', id);
-                  }
-                  let templates = JSON.parse(localStorage.getItem('templates:' + fileKey) || '{}');
-                  delete templates[id];
-                  localStorage.setItem('templates:' + fileKey, JSON.stringify(templates));
-                  console.log('Template deleted from localStorage:', id);
-                  await loadTemplates();
-                  showSavedBadge('Template Deleted');
-                  await minDisplayTime;
-                } catch (e) {
-                  console.error('Delete template failed:', e.message, e.code || 'No code');
-                  alert('Failed to delete template: ' + e.message);
-                } finally {
-                  overlay.classList.add('hidden');
-                }
-              });
-              templatesList.appendChild(card);
-            });
-          console.log('Templates loaded from localStorage');
-        }
-        await minDisplayTime;
-        overlay.classList.add('hidden');
-        return;
-      }
-      try {
-        const templatesCol = db.collection('admissions').where('type', '==', 'template');
-        console.log('Loading templates from Firestore');
-        const snap = await templatesCol.get();
-        if (snap.empty) {
-          templatesList.innerHTML = '<p class="text-slate-500">No templates yet.</p>';
-        }
-        snap.forEach(doc => {
-          const data = doc.data();
-          const card = document.createElement('div');
-          card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
-          card.innerHTML = `
-            <h3 class="font-semibold text-slate-900">${data.displayId || doc.id}</h3>
-            <p class="text-xs text-slate-500">Updated: ${data.updatedAt?.toDate()?.toLocaleString() || 'N/A'}</p>
-            <div class="mt-2 flex gap-2">
-              <button class="load-btn btn btn-primary">Load</button>
-              <button class="delete-btn btn">Delete</button>
-            </div>
-          `;
-          card.querySelector('.load-btn').addEventListener('click', async () => {
-            console.log('Loading template as copy:', doc.id);
-            showCopyModal(doc.id, data);
-          });
-          card.querySelector('.delete-btn').addEventListener('click', async () => {
-            console.log('Delete button clicked for template:', doc.id);
-            if (doc.id === currentAdmissionId && isTemplateMode) {
-              console.warn('Cannot delete active template:', doc.id);
-              alert('Cannot delete the active template. Load another template or admission first.');
-              return;
-            }
-            try {
-              overlay.classList.remove('hidden');
-              overlay.textContent = 'Deleting template…';
-              const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
-              console.log('Deleting from Firestore:', doc.ref.path);
-              await doc.ref.delete();
-              console.log('Template deleted from Firestore:', doc.id);
-              let templates = JSON.parse(localStorage.getItem('templates:' + fileKey) || '{}');
-              delete templates[doc.id];
-              localStorage.setItem('templates:' + fileKey, JSON.stringify(templates));
-              console.log('Template deleted from localStorage:', doc.id);
-              await loadTemplates();
-              showSavedBadge('Template Deleted');
-              await minDisplayTime;
-            } catch (e) {
-              console.error('Delete template failed:', e.message, e.code || 'No code');
-              alert('Failed to delete template: ' + e.message);
-            } finally {
-              overlay.classList.add('hidden');
-            }
-          });
-          templatesList.appendChild(card);
-        });
-        console.log('Templates loaded successfully');
-      } catch (e) {
-        console.error('Load templates failed:', e.message, e.code || 'No code');
-        alert('Failed to load templates: ' + e.message);
-        templatesList.innerHTML = '<p class="text-slate-500">Error loading templates.</p>';
-      } finally {
-        await minDisplayTime;
-        overlay.classList.add('hidden');
-      }
-    }
-
-    // ===== Enhanced Text Wrapping for PDF export =====
-    function wrapTextBlocks(text) {
-      return text.replace(/\r/g, '').split('\n');
-    }
-
-    function wrapLineToWidth(text, font, size, maxWidth) {
-      const words = text.split(/\s+/);
-      const lines = [];
-      let line = '';
-      const W = t => font.widthOfTextAtSize(t, size);
-      for (const w of words) {
-        const t = line ? line + ' ' + w : w;
-        if (W(t) <= maxWidth) {
-          line = t;
-        } else {
-          if (line) lines.push(line);
-          if (W(w) > maxWidth) {
-            let charLine = '';
-            for (const c of w) {
-              const t = charLine + c;
-              if (W(t) <= maxWidth) {
-                charLine = t;
-              } else {
-                if (charLine) lines.push(charLine);
-                charLine = c;
-              }
-            }
-            if (charLine) line = charLine;
-            else line = '';
-          } else {
-            line = w;
-          }
-        }
-      }
-      if (line) lines.push(line);
-      return lines;
-    }
-
-    async function buildPdfBlob() {
-      try {
-        const pdfBytes = await fetch(PDF_URL).then(r => r.arrayBuffer());
-        const pdf = await PDFLib.PDFDocument.load(pdfBytes);
-        const font = await pdf.embedFont(PDFLib.StandardFonts.Helvetica);
-
-        for (let p = 1; p <= pdf.getPageCount(); p++) {
-          const page = pdf.getPages()[p - 1];
-          const { width, height } = page.getSize();
-          const list = anchorsByPage[p] || [];
-          list.forEach(a => {
-            const name = a.name || '';
-            const text = (values[name] || '').toString();
-            if (!text) return;
-            const fpt = a.fpt || 14;
-            const lh = a.lh || 1.2;
-            const pad = 2;
-            const boxW = a.w * width - pad * 2;
-            const boxH = a.h * height - pad * 2;
-            const startX = a.x * width + pad;
-            const topY = height - (a.y * height) - pad;
-
-            const blocks = wrapTextBlocks(text);
-            let y = topY - fpt;
-            outer: for (const b of blocks) {
-              const lines = wrapLineToWidth(b, font, fpt, boxW);
-              for (const ln of lines) {
-                if ((topY - y) > boxH + fpt * 0.2) break outer;
-                page.drawText(ln, { x: startX, y, size: fpt, font, color: PDFLib.rgb(0, 0, 0) });
-                y -= fpt * lh;
-              }
-              y -= fpt * (lh - 1);
-            }
-          });
-        }
-        const outBytes = await pdf.save();
-        return new Blob([outBytes], { type: 'application/pdf' });
-      } catch (e) {
-        console.error('Build PDF failed:', e);
-        throw e;
-      }
-    }
-
-    async function doExport() {
-      try {
-        overlay.classList.remove('hidden');
-        overlay.textContent = 'Preparing download…';
-        const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
-        const blob = await buildPdfBlob();
-        download(fileKey + '-filled.pdf', blob);
-        await minDisplayTime;
-      } catch (e) {
-        console.error('Export failed:', e);
-        alert('Failed to export PDF: ' + e.message);
-      } finally {
-        overlay.classList.add('hidden');
-      }
-    }
-
-    async function doPrint() {
-      try {
-        overlay.classList.remove('hidden');
-        overlay.textContent = 'Preparing print…';
-        const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
-        const blob = await buildPdfBlob();
-        const url = URL.createObjectURL(blob);
-        window.open(url, '_blank')?.print();
-        setTimeout(() => URL.revokeObjectURL(url), 15000);
-        await minDisplayTime;
-      } catch (e) {
-        console.error('Print failed:', e);
-        alert('Failed to print: ' + e.message);
-        overlay.textContent = 'Failed to print. Click to retry.';
-        overlay.style.cursor = 'pointer';
-        overlay.addEventListener('click', () => {
-          overlay.style.cursor = 'auto';
-          doPrint();
-        }, { once: true });
-      } finally {
-        overlay.classList.add('hidden');
-      }
-    }
-
-    async function doSave() {
-      if (!docRef || !currentAdmissionId) {
-        alert('No admission or template selected. Create or load one first.');
-        return;
-      }
-      try {
-        overlay.classList.remove('hidden');
-        overlay.textContent = 'Saving…';
-        const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
-        localStorage.setItem('values:' + fileKey, JSON.stringify(values));
         await saveValuesToFirestore(docRef, currentAdmissionId, isTemplateMode ? 'template' : 'admission');
-        const storageKey = isTemplateMode ? 'templates:' + fileKey : 'admissions:' + fileKey;
-        let items = JSON.parse(localStorage.getItem(storageKey) || '{}');
-        items[currentAdmissionId] = { 
-          displayId: items[currentAdmissionId]?.displayId || currentAdmissionId, 
-          type: isTemplateMode ? 'template' : 'admission', 
-          values: { ...values }, 
-          fileKey, 
-          updatedAt: new Date().toISOString() 
+        const key = isTemplateMode ? 'templates:' + fileKey : 'admissions:' + fileKey;
+        const items = JSON.parse(localStorage.getItem(key) || '{}');
+        items[currentAdmissionId] = {
+          displayId: items[currentAdmissionId]?.displayId || currentAdmissionId,
+          type: isTemplateMode ? 'template' : 'admission',
+          values: { ...values }, fileKey, updatedAt: new Date().toISOString()
         };
-        localStorage.setItem(storageKey, JSON.stringify(items));
-        await (isTemplateMode ? loadTemplates() : loadAdmissions());
-        showSavedBadge();
-        await minDisplayTime;
-      } catch (e) {
-        console.error('Save failed:', e);
-        alert('Failed to save: ' + e.message);
-      } finally {
-        overlay.classList.add('hidden');
-      }
-    }
-
-    // ===== Events =====
-    newAdmissionBtn.addEventListener('click', () => {
-      console.log('New admission button clicked');
-      showNewAdmissionModal();
-    });
-    newTemplateBtn.addEventListener('click', () => {
-      console.log('New template button clicked');
-      showNewAdmissionModal(true);
-    });
-    saveBtn.addEventListener('click', doSave);
-    printBtn.addEventListener('click', doPrint);
-    exportBtn.addEventListener('click', doExport);
-    copyTextBtn.addEventListener('click', copyFormText);
-
-    let _resizeTO = null;
-    window.addEventListener('resize', () => {
-      if (!pdfDoc) return;
-      clearTimeout(_resizeTO);
-      _resizeTO = setTimeout(async () => {
-        await renderAllPages();
-      }, 200);
-    });
-
-    async function loadPdf() {
-      try {
-        overlay.classList.remove('hidden');
-        overlay.textContent = 'Loading PDF…';
-        const minDisplayTime = new Promise(resolve => setTimeout(resolve, 500));
-        setEnabled(false);
-        pdfDoc = await pdfjsLib.getDocument(PDF_URL).promise;
-        await renderAllPages();
-        setEnabled(true);
-        await minDisplayTime;
-      } catch (e) {
-        console.error('PDF load error:', e);
-        alert('Failed to load PDF: ' + e.message);
-        overlay.textContent = 'Failed to load PDF. Click to retry.';
-        overlay.style.cursor = 'pointer';
-        overlay.addEventListener('click', () => {
-          overlay.style.cursor = 'auto';
-          loadPdf();
-        }, { once: true });
-      } finally {
-        overlay.classList.add('hidden');
-      }
-    }
-
-    (async function init() {
-      console.log('Initializing application');
-      values = {};
-      docRef = null;
-      currentAdmissionId = null;
-      isTemplateMode = false;
-      localStorage.removeItem('values:' + fileKey);
-      localStorage.removeItem('currentAdmission:' + fileKey);
-      console.log('Initial state cleared:', { values, docRef, currentAdmissionId, isTemplateMode });
-
-      await ensureFirebase();
-
-      try {
-        const p = await fetch('https://raw.githubusercontent.com/nuhadwrk/admission/main/anchors.json', { cache: 'no-store' });
-        if (p.ok) {
-          const j = await p.json();
-          anchorsByPage = j.anchorsByPage || j;
-          console.log('Loaded anchors.json:', anchorsByPage);
-        } else {
-          console.warn('Failed to fetch anchors.json:', p.status);
+        localStorage.setItem(key, JSON.stringify(items));
+        localStorage.setItem('values:' + fileKey, JSON.stringify(values));
+        if (isTemplateMode && isNewTemplate) {
+          isNewTemplate = false; // Lock template after manual save
+          setEditable(false);
         }
-      } catch (e) {
-        console.warn('No anchors.json found or failed to load:', e);
-      }
+        showSavedBadge();
+      } catch(e){ alert('Save failed: ' + e.message); }
+    }
 
-      await loadPdf();
-      await loadAdmissions();
-      await loadTemplates();
+    async function loadValuesFromFirestore(ref){
+      if (!ref || !firebaseInitialized) return;
+      const snap = await ref.get();
+      if (snap.exists){
+        values = { ...snap.data()?.values, fontSize: snap.data()?.values?.fontSize || 14, lineHeight: snap.data()?.values?.lineHeight || 1.2 };
+        applyValuesToDom();
+        fontSizeSelector.value = values.fontSize;
+        lineHeightSelector.value = values.lineHeight;
+      } else {
+        values = { fontSize: 14, lineHeight: 1.2 };
+      }
+    }
+
+    // ========= UI: Modals =========
+    function openEntryModal({title, onCreate, isTemplate = false}){
+      const modal = document.createElement('div');
+      modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-[2000]';
+      modal.innerHTML = `
+        <div class="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full">
+          <h2 class="text-lg font-bold mb-4">${title}</h2>
+          ${isTemplate ? `
+            <label class="block mb-2 text-sm font-medium">Template Name</label>
+            <input id="nameInput" type="text" class="w-full border border-slate-300 p-2 mb-4 rounded-lg">
+          ` : `
+            <label class="block mb-2 text-sm font-medium">Age (years)</label>
+            <input id="ageInput" type="number" class="w-full border border-slate-300 p-2 mb-2 rounded-lg">
+            <label class="block mb-2 text-sm font-medium">Sex</label>
+            <select id="sexSelect" class="w-full border border-slate-300 p-2 mb-2 rounded-lg">
+              <option value="M">Male</option><option value="F">Female</option><option value="O">Other</option>
+            </select>
+            <label class="block mb-2 text-sm font-medium">Diagnosis</label>
+            <input id="diagInput" type="text" class="w-full border border-slate-300 p-2 mb-4 rounded-lg">
+          `}
+          <button id="okBtn" class="btn btn-primary w-full">Create</button>
+          <button id="cancelBtn" class="btn w-full mt-2">Cancel</button>
+        </div>`;
+      document.body.appendChild(modal);
+      modal.querySelector('#cancelBtn').onclick = ()=> modal.remove();
+      modal.querySelector('#okBtn').onclick = async ()=>{
+        if (isTemplate) {
+          const name = modal.querySelector('#nameInput').value.trim();
+          if (!name) return alert('Template name is required.');
+          await onCreate({name});
+        } else {
+          const age = modal.querySelector('#ageInput').value.trim();
+          const sex = modal.querySelector('#sexSelect').value;
+          const diagnosis = modal.querySelector('#diagInput').value.trim().toUpperCase();
+          if (!age || !sex || !diagnosis) return alert('All fields are required.');
+          await onCreate({age, sex, diagnosis});
+        }
+        modal.remove();
+      };
+    }
+
+    async function loadAdmissionsList(){
+      admissionsList.innerHTML = '';
+      const key = 'admissions:' + fileKey;
+      const local = JSON.parse(localStorage.getItem(key) || '{}');
+      const entries = Object.entries(local);
+      if (!entries.length) admissionsList.innerHTML = '<p class="text-slate-500">No admissions yet.</p>';
+      for (const [id, data] of entries){
+        const card = document.createElement('div');
+        card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
+        card.innerHTML = `
+          <h3 class="font-semibold">${data.displayId || id}</h3>
+          <p class="text-xs text-slate-500">Updated: ${new Date(data.updatedAt).toLocaleString()}</p>
+          <div class="mt-2 flex gap-2">
+            <button class="btn btn-primary load-btn">Load</button>
+            <button class="btn copy-btn">Load As Copy</button>
+            <button class="btn delete-btn">Delete</button>
+          </div>`;
+        card.querySelector('.load-btn').onclick = async ()=>{
+          values = { ...(data.values || {}), fontSize: data.values?.fontSize || 14, lineHeight: data.values?.lineHeight || 1.2 }; 
+          applyValuesToDom();
+          fontSizeSelector.value = values.fontSize;
+          lineHeightSelector.value = values.lineHeight;
+          isTemplateMode = false; currentAdmissionId = id; isNewTemplate = false; setEditable(true);
+          if (firebaseInitialized) docRef = firebase.firestore().collection('admissions').doc(id);
+          window.scrollTo({top:0, behavior:'smooth'});
+        };
+        card.querySelector('.copy-btn').onclick = ()=>{
+          openEntryModal({
+            title:'New Admission (Copy)',
+            onCreate: async ({age,sex,diagnosis})=>{
+              const now = new Date();
+              const stamp = `${String(now.getDate())}-${now.getMonth()+1}-${now.getFullYear()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+              const displayId = `${age}y/${sex} ${diagnosis} (${stamp})`;
+              const docId = displayId.replace(/ /g,'_').replace(/\//g,'-').replace(/[\(\)]/g,'');
+              const key = 'admissions:' + fileKey;
+              const all = JSON.parse(localStorage.getItem(key) || '{}');
+              all[docId] = { displayId, type:'admission', values:{...(data.values||{}), fontSize: data.values?.fontSize || 14, lineHeight: data.values?.lineHeight || 1.2}, fileKey, updatedAt: now.toISOString() };
+              localStorage.setItem(key, JSON.stringify(all));
+              values = { ...(data.values||{}), fontSize: data.values?.fontSize || 14, lineHeight: data.values?.lineHeight || 1.2 }; 
+              currentAdmissionId = docId; isTemplateMode=false; isNewTemplate=false; setEditable(true);
+              fontSizeSelector.value = values.fontSize;
+              lineHeightSelector.value = values.lineHeight;
+              if (firebaseInitialized){
+                docRef = firebase.firestore().collection('admissions').doc(docId);
+                await docRef.set({ displayId, type:'admission', values:{...(data.values||{}), fontSize: data.values?.fontSize || 14, lineHeight: data.values?.lineHeight || 1.2}, fileKey, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+              }
+              applyValuesToDom();
+              loadAdmissionsList(); showSavedBadge('Admission Copy Created');
+              window.scrollTo({top:0, behavior:'smooth'});
+            }
+          });
+        };
+        card.querySelector('.delete-btn').onclick = ()=>{
+          if (id === currentAdmissionId) return alert('Load another admission first.');
+          const all = JSON.parse(localStorage.getItem(key) || '{}'); delete all[id];
+          localStorage.setItem(key, JSON.stringify(all)); loadAdmissionsList(); showSavedBadge('Admission Deleted');
+        };
+        admissionsList.appendChild(card);
+      }
+    }
+
+    async function loadTemplatesList(){
+      templatesList.innerHTML = '';
+      const key = 'templates:' + fileKey;
+      const local = JSON.parse(localStorage.getItem(key) || '{}');
+      const entries = Object.entries(local);
+      if (!entries.length) templatesList.innerHTML = '<p class="text-slate-500">No templates yet.</p>';
+      for (const [id, data] of entries){
+        const card = document.createElement('div');
+        card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
+        card.innerHTML = `
+          <h3 class="font-semibold">${data.displayId || id}</h3>
+          <p class="text-xs text-slate-500">Updated: ${new Date(data.updatedAt).toLocaleString()}</p>
+          <div class="mt-2 flex gap-2">
+            <button class="btn btn-primary load-btn">Use Template</button>
+            <button class="btn delete-btn">Delete</button>
+          </div>`;
+        card.querySelector('.load-btn').onclick = ()=>{
+          openEntryModal({
+            title:'New Admission (From Template)',
+            onCreate: async ({age,sex,diagnosis})=>{
+              const now = new Date();
+              const stamp = `${String(now.getDate())}-${now.getMonth()+1}-${now.getFullYear()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+              const displayId = `${age}y/${sex} ${diagnosis} (${stamp})`;
+              const docId = displayId.replace(/ /g,'_').replace(/\//g,'-').replace(/[\(\)]/g,'');
+              const all = JSON.parse(localStorage.getItem('admissions:'+fileKey) || '{}');
+              all[docId] = { displayId, type:'admission', values:{...(data.values||{}), fontSize: data.values?.fontSize || 14, lineHeight: data.values?.lineHeight || 1.2}, fileKey, updatedAt: now.toISOString() };
+              localStorage.setItem('admissions:'+fileKey, JSON.stringify(all));
+              values = { ...(data.values||{}), fontSize: data.values?.fontSize || 14, lineHeight: data.values?.lineHeight || 1.2 }; 
+              currentAdmissionId = docId; isTemplateMode=false; isNewTemplate=false; setEditable(true);
+              fontSizeSelector.value = values.fontSize;
+              lineHeightSelector.value = values.lineHeight;
+              if (firebaseInitialized){
+                docRef = firebase.firestore().collection('admissions').doc(docId);
+                await docRef.set({ displayId, type:'admission', values:{...(data.values||{}), fontSize: data.values?.fontSize || 14, lineHeight: data.values?.lineHeight || 1.2}, fileKey, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+              }
+              applyValuesToDom();
+              loadAdmissionsList(); showSavedBadge('Admission Created');
+              window.scrollTo({top:0, behavior:'smooth'});
+            }
+          });
+        };
+        card.querySelector('.delete-btn').onclick = ()=>{
+          if (id === currentAdmissionId && isTemplateMode) return alert('Load another template/admission first.');
+          const all = JSON.parse(localStorage.getItem(key) || '{}'); delete all[id];
+          localStorage.setItem(key, JSON.stringify(all)); loadTemplatesList(); showSavedBadge('Template Deleted');
+        };
+        templatesList.appendChild(card);
+      }
+    }
+
+    function copyFormText(){
+      const order = ['complains','hopi','pasthx','personalhx','fhx','obs','ge','cvs','rs','pa','pelvis','cns','le','txhx','provdx','dx','management','management2'];
+      const text = order.map(k => (values[k]||'').toString().trim()).filter(Boolean).join('\n');
+      if (!text) return alert('No text to copy.');
+      navigator.clipboard?.writeText(text).then(()=>showSavedBadge('Text Copied')).catch(e=>alert('Copy failed: '+e.message));
+    }
+
+    // ========= INIT =========
+    async function init(){
+      overlay.classList.remove('hidden'); overlay.textContent='Loading PDF…';
+      await ensureFirebase();
+      try {
+        const a = await fetch(ANCHORS_URL, {cache:'no-store'});
+        anchorsByPage = a.ok ? (await a.json()).anchorsByPage || await a.json() : {};
+      } catch { anchorsByPage = {}; }
+
+      pdfDoc = await pdfjsLib.getDocument(PDF_URL).promise;
+      await createPages();
       setEditable(false);
-      console.log('Initialization complete');
-    })();
+      overlay.classList.add('hidden');
+
+      await loadAdmissionsList();
+      await loadTemplatesList();
+
+      // Check if a template is loaded and lock it if saved
+      const savedValues = JSON.parse(localStorage.getItem('values:' + fileKey) || '{}');
+      if (savedValues && isTemplateMode && !isNewTemplate) setEditable(false);
+
+      fontSizeSelector.addEventListener('change', (e) => {
+        updateFontSize(e.target.value);
+      });
+      lineHeightSelector.addEventListener('change', (e) => {
+        updateLineHeight(e.target.value);
+      });
+    }
+
+    // ========= BUTTONS =========
+    newAdmissionBtn.onclick = ()=>{
+      values = { fontSize: values.fontSize || 14, lineHeight: values.lineHeight || 1.2 }; // Clear values, preserve fontSize and lineHeight
+      applyValuesToDom();
+      openEntryModal({
+        title:'New Admission',
+        onCreate: async ({age,sex,diagnosis})=>{
+          const now = new Date();
+          const stamp = `${String(now.getDate())}-${now.getMonth()+1}-${now.getFullYear()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+          const displayId = `${age}y/${sex} ${diagnosis} (${stamp})`;
+          const docId = displayId.replace(/ /g,'_').replace(/\//g,'-').replace(/[\(\)]/g,'');
+          const key = 'admissions:' + fileKey;
+          const all = JSON.parse(localStorage.getItem(key) || '{}');
+          all[docId] = { displayId, type:'admission', values:{fontSize: values.fontSize || 14, lineHeight: values.lineHeight || 1.2}, fileKey, updatedAt: now.toISOString() };
+          localStorage.setItem(key, JSON.stringify(all));
+          values = { fontSize: values.fontSize || 14, lineHeight: values.lineHeight || 1.2 }; 
+          currentAdmissionId = docId; isTemplateMode=false; isNewTemplate=false; setEditable(true);
+          fontSizeSelector.value = values.fontSize;
+          lineHeightSelector.value = values.lineHeight;
+          if (firebaseInitialized){
+            docRef = firebase.firestore().collection('admissions').doc(docId);
+            await docRef.set({ displayId, type:'admission', values:{fontSize: values.fontSize || 14, lineHeight: values.lineHeight || 1.2}, fileKey, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+          }
+          applyValuesToDom();
+          loadAdmissionsList(); showSavedBadge('Admission Created');
+          window.scrollTo({top:0, behavior:'smooth'});
+        }
+      });
+    };
+
+    newTemplateBtn.onclick = ()=>{
+      values = { fontSize: values.fontSize || 14, lineHeight: values.lineHeight || 1.2 }; // Clear values, preserve fontSize and lineHeight
+      applyValuesToDom();
+      openEntryModal({
+        title:'New Template',
+        isTemplate: true,
+        onCreate: async ({name})=>{
+          const now = new Date();
+          const stamp = `${String(now.getDate())}-${now.getMonth()+1}-${now.getFullYear()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+          const displayId = `${name} (${stamp})`;
+          const docId = displayId.replace(/ /g,'_').replace(/\//g,'-').replace(/[\(\)]/g,'');
+          const key = 'templates:' + fileKey;
+          const all = JSON.parse(localStorage.getItem(key) || '{}');
+          all[docId] = { displayId, type:'template', values:{fontSize: values.fontSize || 14, lineHeight: values.lineHeight || 1.2}, fileKey, updatedAt: now.toISOString() };
+          localStorage.setItem(key, JSON.stringify(all));
+          currentAdmissionId = docId; isTemplateMode=true; isNewTemplate=true; 
+          values = {fontSize: values.fontSize || 14, lineHeight: values.lineHeight || 1.2}; 
+          setEditable(true);
+          fontSizeSelector.value = values.fontSize;
+          lineHeightSelector.value = values.lineHeight;
+          if (firebaseInitialized){
+            docRef = firebase.firestore().collection('admissions').doc(docId);
+            await docRef.set({ displayId, type:'template', values:{fontSize: values.fontSize || 14, lineHeight: values.lineHeight || 1.2}, fileKey, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+          }
+          applyValuesToDom();
+          loadTemplatesList(); showSavedBadge('Template Created');
+          window.scrollTo({top:0, behavior:'smooth'});
+        }
+      });
+    };
+
+    saveBtn.onclick = ()=> manualSave();
+    exportBtn.onclick = ()=> doExport();
+    printBtn.onclick = ()=> doPrint();
+    copyTextBtn.onclick = ()=> copyFormText();
+
+    // Lock templates on page refresh
+    window.addEventListener('load', () => {
+      const key = isTemplateMode ? 'templates:' + fileKey : 'admissions:' + fileKey;
+      const items = JSON.parse(localStorage.getItem(key) || '{}');
+      if (isTemplateMode && items[currentAdmissionId] && !isNewTemplate) {
+        setEditable(false);
+      }
+    });
+
+    // GO
+    init();
   </script>
 </body>
 </html>
