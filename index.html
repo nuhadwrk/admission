@@ -1,4 +1,44 @@
-<!DOCTYPE html>
+
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -62,6 +102,8 @@
       border-radius: 4px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.05);
       transform: translateZ(0);
+      image-rendering: crisp-edges; /* Optimize for sharpness */
+      image-rendering: pixelated; /* Firefox fallback */
     }
 
     .box {
@@ -74,17 +116,19 @@
       padding: 2px 4px;
       line-height: 1.2;
       outline: none;
-      overflow: hidden;
+      overflow: hidden; /* Enforce no scrolling */
+      max-height: 100%; /* Clip content */
       white-space: pre-wrap;
       user-select: text;
       touch-action: manipulation;
       font-size: inherit;
       font-family: Helvetica, Arial, sans-serif;
+      z-index: 10; /* Prevent overlap */
     }
     .box:focus { box-shadow: 0 0 0 3px var(--ring); }
     .box.disabled { background: #f1f5f9; opacity: .7; cursor: not-allowed; }
 
-    #overlay {
+    #overlay, #viewOverlay {
       position: absolute;
       inset: 0;
       display: flex;
@@ -120,14 +164,14 @@
       opacity: 0; transition: opacity .3s ease;
     }
     #saveBadge.visible { opacity: 1; }
-  @media (max-width: 640px) {
-  #chrome { padding: 8px; }
-  #actionBar { left: 8px; right: 8px; bottom: 8px; padding: 6px; border-radius: 8px; flex-wrap: wrap; }
-  .btn { padding: 6px 10px; font-size: 12px; }
-  #stage { padding: 8px; }
-  body { padding-bottom: 200px; }
-  #templatesSection { margin-bottom: 100px; }
-}
+    @media (max-width: 640px) {
+      #chrome { padding: 8px; }
+      #actionBar { left: 8px; right: 8px; bottom: 8px; padding: 6px; border-radius: 8px; flex-wrap: wrap; }
+      .btn { padding: 6px 10px; font-size: 12px; }
+      #stage { padding: 8px; }
+      body { padding-bottom: 200px; }
+      #templatesSection { margin-bottom: 100px; }
+    }
     @media print {
       body, #chrome, #stage, .page-sizer, .page, .box, canvas { display: none !important; }
     }
@@ -143,6 +187,12 @@
     <div id="stage" class="relative">
       <div id="pages" class="flex flex-col items-center gap-3 relative">
         <div id="overlay">Loading…</div>
+        <div id="viewOverlay" class="hidden">
+          <div class="text-center">
+            <p>Viewing Template – Editing Disabled</p>
+            <button id="closeViewBtn" class="btn btn-primary mt-4">Close View</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -171,8 +221,8 @@
       <option value="10">10px</option>
       <option value="11">11px</option>
       <option value="12">12px</option>
-      <option value="13">13px</option>
-      <option value="14" selected>14px</option>
+      <option value="13" selected>13px</option>
+      <option value="14">14px</option>
       <option value="15">15px</option>
       <option value="16">16px</option>
       <option value="17">17px</option>
@@ -182,8 +232,8 @@
     <select id="lineHeightSelector" class="btn">
       <option value="1.0">1.0</option>
       <option value="1.1">1.1</option>
-      <option value="1.2" selected>1.2</option>
-      <option value="1.3">1.3</option>
+      <option value="1.2">1.2</option>
+      <option value="1.3" selected>1.3</option>
       <option value="1.4">1.4</option>
       <option value="1.5">1.5</option>
     </select>
@@ -210,6 +260,8 @@
     // ========= ELEMENTS =========
     const pagesRoot = document.getElementById('pages');
     const overlay = document.getElementById('overlay');
+    const viewOverlay = document.getElementById('viewOverlay');
+    const closeViewBtn = document.getElementById('closeViewBtn');
     const stage = document.getElementById('stage');
     const saveBadge = document.getElementById('saveBadge');
     const newAdmissionBtn = document.getElementById('newAdmissionBtn');
@@ -226,13 +278,22 @@
     // ========= STATE =========
     let pdfDoc = null;
     let anchorsByPage = {};
-    let values = { fontSize: 14, lineHeight: 1.2 };
+    let values = { fontSize: 13, lineHeight: 1.3 };
     let fileKey = 'Admission';
     let db = null, firebaseInitialized = false;
     let docRef = null, currentAdmissionId = null, isTemplateMode = false, isNewTemplate = false;
     let baseW = 0, baseH = 0;
     let scale = 1;
     const DPR = Math.min(window.devicePixelRatio || 1, 2);
+    const canvasCache = new Map(); // Cache for rendered canvases
+    const lineLimits = {
+      complains: 7,
+      hopi: 6,
+      pasthx: 6,
+      personalhx: 6,
+      fhx: 5
+    };
+    const fieldOrder = ['complains', 'hopi', 'pasthx', 'personalhx', 'fhx'];
 
     // ========= HELPERS =========
     function showSavedBadge(msg = 'Saved') {
@@ -269,7 +330,7 @@
 
     function clearFormDomAndState() {
       document.querySelectorAll('.box').forEach(tb => {
-        tb.innerText = '';
+        tb.textContent = '';
         if (tb.dataset.name) delete values[tb.dataset.name];
       });
     }
@@ -281,6 +342,240 @@
         clearTimeout(timeout);
         timeout = setTimeout(() => fn(...args), delay);
       };
+    }
+
+    // Normalize text for contenteditable
+    function normalizeText(text) {
+      return text.replace(/\u00A0/g, ' ').replace(/<br\s*\/?>/gi, '\n').trim();
+    }
+
+    // Count visual lines based on box width and font, with each \n as a new line
+    function countVisualLines(tb, text) {
+      const normalizedText = normalizeText(text);
+      if (!normalizedText) return 0;
+      const boxWidth = getBoxWidth(tb);
+      const fontSize = parseInt(getComputedStyle(tb).fontSize) || values.fontSize;
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      ctx.font = `${fontSize}px Helvetica`;
+      let totalLines = 0;
+      const segments = normalizedText.split('\n');
+      for (const segment of segments) {
+        if (!segment.trim()) {
+          totalLines += 1; // Empty line counts as one visual line
+          continue;
+        }
+        let currentLineWidth = 0;
+        const words = segment.split(' ').filter(w => w);
+        let lineCount = 1; // Start with 1 line per non-empty segment
+        for (const word of words) {
+          const wordWidth = ctx.measureText(word + ' ').width;
+          if (currentLineWidth + wordWidth > boxWidth) {
+            lineCount++;
+            currentLineWidth = wordWidth;
+          } else {
+            currentLineWidth += wordWidth;
+          }
+        }
+        totalLines += lineCount;
+      }
+      console.log(`countVisualLines: field=${tb.dataset.name}, text="${normalizedText.slice(0, 20)}...", boxWidth=${boxWidth}, fontSize=${fontSize}, lines=${totalLines}`);
+      return totalLines;
+    }
+
+    // Get box width for a text box, accounting for padding and scale
+    function getBoxWidth(tb) {
+      const pageNo = tb.dataset.page;
+      const name = tb.dataset.name;
+      const anchor = (anchorsByPage[pageNo] || []).find(a => a.name === name);
+      const styles = getComputedStyle(tb);
+      const padding = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
+      if (anchor) {
+        return snap(anchor.w * baseW * scale) - padding;
+      }
+      return parseFloat(styles.width) - padding;
+    }
+
+    // Handle text continuation to next field
+    function handleTextContinuation(tb, text) {
+      const name = tb.dataset.name;
+      if (!name || !lineLimits[name]) return;
+      const maxLines = lineLimits[name];
+      const fontSize = parseInt(getComputedStyle(tb).fontSize) || values.fontSize;
+      const boxWidth = getBoxWidth(tb);
+      const lineCount = countVisualLines(tb, text);
+
+      if (lineCount > maxLines) {
+        console.log(`handleTextContinuation: ${name} exceeds ${maxLines} lines (${lineCount})`);
+        const segments = normalizeText(text).split('\n');
+        let currentLines = 0;
+        let keepText = [];
+        let excessText = [];
+        let currentLineWidth = 0;
+        const ctx = tb.ownerDocument.createElement('canvas').getContext('2d');
+        ctx.font = `${fontSize}px Helvetica`;
+
+        // Process each segment to fit within maxLines
+        for (const segment of segments) {
+          if (currentLines >= maxLines) {
+            excessText.push(segment);
+            continue;
+          }
+          const words = segment.split(' ').filter(w => w);
+          let lineWords = [];
+          let segmentLines = segment.trim() ? 1 : 1;
+          for (const word of words) {
+            const wordWidth = ctx.measureText(word + ' ').width;
+            if (currentLineWidth + wordWidth > boxWidth) {
+              segmentLines++;
+              if (currentLines + segmentLines <= maxLines) {
+                keepText.push(lineWords.join(' '));
+                lineWords = [word];
+                currentLineWidth = wordWidth;
+              } else {
+                lineWords.push(word);
+                excessText.push(lineWords.join(' '));
+                lineWords = [];
+                currentLineWidth = 0;
+              }
+            } else {
+              lineWords.push(word);
+              currentLineWidth += wordWidth;
+            }
+          }
+          if (lineWords.length) {
+            if (currentLines + segmentLines <= maxLines) {
+              keepText.push(lineWords.join(' '));
+            } else {
+              excessText.push(lineWords.join(' '));
+            }
+          }
+          currentLines += segmentLines;
+          currentLineWidth = 0;
+        }
+
+        // Update current field
+        const newText = keepText.join('\n').trim();
+        requestAnimationFrame(() => {
+          const sel = window.getSelection();
+          const range = sel.rangeCount ? sel.getRangeAt(0) : null;
+          tb.textContent = newText || '';
+          values[name] = newText;
+          if (range && tb.contains(range.startContainer)) {
+            const newRange = document.createRange();
+            newRange.selectNodeContents(tb);
+            newRange.collapse(false);
+            sel.removeAllRanges();
+            sel.addRange(newRange);
+          }
+          console.log(`Updated ${name}: "${newText.slice(0, 20)}..."`);
+
+          // Move excess to next field or truncate for fhx
+          const nextFieldIdx = fieldOrder.indexOf(name) + 1;
+          if (nextFieldIdx < fieldOrder.length) {
+            const nextFieldName = fieldOrder[nextFieldIdx];
+            const nextBox = document.querySelector(`.box[data-name="${nextFieldName}"]`);
+            if (nextBox) {
+              const existingText = normalizeText(nextBox.textContent).trim();
+              const updatedText = (existingText ? existingText + '\n' : '') + excessText.join('\n').trim();
+              nextBox.textContent = updatedText;
+              values[nextFieldName] = updatedText;
+              console.log(`Moved excess to ${nextFieldName}: "${excessText.join('\n').slice(0, 20)}..."`);
+              handleTextContinuation(nextBox, updatedText); // Cascade
+            }
+          } else if (name === 'fhx') {
+            console.log('fhx truncated at 5 lines');
+            alert('Maximum 5 lines reached for Family History');
+          }
+        });
+
+        if (docRef) autoSaveValues();
+      }
+    }
+
+    // Handle reverse flow on deletion
+    function handleReverseFlow(tb, isDeletion) {
+      if (!isDeletion) return; // Only run on deletion
+      const name = tb.dataset.name;
+      const idx = fieldOrder.indexOf(name);
+      if (idx >= fieldOrder.length - 1) return;
+
+      const nextName = fieldOrder[idx + 1];
+      const nextBox = document.querySelector(`.box[data-name="${nextName}"]`);
+      if (!nextBox || !normalizeText(nextBox.textContent).trim()) return;
+
+      const boxWidth = getBoxWidth(tb);
+      const fontSize = parseInt(getComputedStyle(tb).fontSize) || values.fontSize;
+      const lineCount = countVisualLines(tb, normalizeText(tb.textContent));
+      const maxLines = lineLimits[name];
+
+      if (lineCount < maxLines) {
+        console.log(`handleReverseFlow: Pulling text to ${name} (current: ${lineCount}/${maxLines})`);
+        const neededLines = maxLines - lineCount;
+        const nextSegments = normalizeText(nextBox.textContent).split('\n');
+        let pullText = [];
+        let keepText = [];
+        let currentLines = 0;
+        let currentLineWidth = 0;
+        const ctx = tb.ownerDocument.createElement('canvas').getContext('2d');
+        ctx.font = `${fontSize}px Helvetica`;
+
+        for (const segment of nextSegments) {
+          if (currentLines >= neededLines) {
+            keepText.push(segment);
+            continue;
+          }
+          const words = segment.split(' ').filter(w => w);
+          let lineWords = [];
+          let segmentLines = segment.trim() ? 1 : 1;
+          for (const word of words) {
+            const wordWidth = ctx.measureText(word + ' ').width;
+            if (currentLineWidth + wordWidth > boxWidth) {
+              segmentLines++;
+              if (currentLines + segmentLines <= neededLines) {
+                pullText.push(lineWords.join(' '));
+                lineWords = [word];
+                currentLineWidth = wordWidth;
+              } else {
+                lineWords.push(word);
+                keepText.push(lineWords.join(' '));
+                lineWords = [];
+                currentLineWidth = 0;
+              }
+            } else {
+              lineWords.push(word);
+              currentLineWidth += wordWidth;
+            }
+          }
+          if (lineWords.length) {
+            if (currentLines + segmentLines <= neededLines) {
+              pullText.push(lineWords.join(' '));
+            } else {
+              keepText.push(lineWords.join(' '));
+            }
+          }
+          currentLines += segmentLines;
+          currentLineWidth = 0;
+        }
+
+        requestAnimationFrame(() => {
+          const sel = window.getSelection();
+          const range = sel.rangeCount ? sel.getRangeAt(0) : null;
+          tb.textContent = (normalizeText(tb.textContent) ? normalizeText(tb.textContent) + '\n' : '') + pullText.join('\n');
+          values[name] = normalizeText(tb.textContent);
+          nextBox.textContent = keepText.join('\n').trim();
+          values[nextName] = normalizeText(nextBox.textContent);
+          if (range && tb.contains(range.startContainer)) {
+            const newRange = document.createRange();
+            newRange.selectNodeContents(tb);
+            newRange.collapse(false);
+            sel.removeAllRanges();
+            sel.addRange(newRange);
+          }
+          console.log(`Pulled text to ${name}: "${pullText.join('\n').slice(0, 20)}..."`);
+          if (docRef) autoSaveValues();
+        });
+      }
     }
 
     // ========= INITIALIZE FIREBASE =========
@@ -312,7 +607,8 @@
         for (let p = 1; p <= pdfDoc.numPages; p++) {
           const page = await pdfDoc.getPage(p);
           const vCSS = page.getViewport({ scale: 1 });
-          const vHiDPI = page.getViewport({ scale: DPR });
+          const scaleFactor = 3 * DPR; // Higher render scale for sharpness
+          const vHiDPI = page.getViewport({ scale: scaleFactor });
 
           const sizer = document.createElement('div');
           sizer.className = 'page-sizer';
@@ -338,6 +634,7 @@
           pagesRoot.appendChild(sizer);
 
           await page.render({ canvasContext: ctx, viewport: vHiDPI }).promise;
+          canvasCache.set(p, canvas.toDataURL()); // Cache rendered canvas
 
           (anchorsByPage[p] || []).forEach(a => spawnBox(wrap, a, p));
         }
@@ -354,13 +651,24 @@
     function setScale() {
       const padX = 16;
       const avail = Math.max(stage.clientWidth - padX, 280);
-      scale = avail / baseW;
+      scale = Math.round(avail / baseW * 100) / 100; // Round to avoid fractional scaling
       document.querySelectorAll('.page-sizer').forEach(sizer => {
         sizer.style.setProperty('--w', (baseW * scale) + 'px');
         sizer.style.setProperty('--h', (baseH * scale) + 'px');
       });
       document.querySelectorAll('.page').forEach(page => {
         page.style.setProperty('--s', String(scale));
+      });
+      document.querySelectorAll('.box').forEach(tb => {
+        const pageNo = tb.dataset.page;
+        const name = tb.dataset.name;
+        const anchor = (anchorsByPage[pageNo] || []).find(a => a.name === name);
+        if (anchor) {
+          tb.style.left = snap(anchor.x * baseW) + 'px';
+          tb.style.top = snap(anchor.y * baseH) + 'px';
+          tb.style.width = snap(anchor.w * baseW) + 'px';
+          tb.style.height = snap(anchor.h * baseH) + 'px';
+        }
       });
     }
 
@@ -381,8 +689,9 @@
       tb.dataset.page = String(pageNo);
       tb.dataset.name = a.name || '';
 
-      tb.style.fontSize = (values.fontSize || a.fpt || 14) + 'px';
-      tb.style.lineHeight = String((values.lineHeight || a.lh || 1.2).toFixed(1));
+      tb.style.fontSize = (values.fontSize || a.fpt || 13) + 'px';
+      tb.style.lineHeight = String((values.lineHeight || a.lh || 1.3).toFixed(1));
+      tb.style.maxHeight = snap(a.h * baseH) + 'px';
 
       const left = snap(a.x * baseW);
       const top = snap(a.y * baseH);
@@ -393,17 +702,63 @@
       tb.style.width = width + 'px';
       tb.style.height = height + 'px';
 
-      tb.innerText = values[a.name || ''] || '';
+      tb.textContent = values[a.name || ''] || '';
 
-      tb.addEventListener('input', () => {
+      const handleInput = (e) => {
         const k = tb.dataset.name;
-        if (k) values[k] = tb.innerText;
+        if (!k) return;
+
+        const newText = normalizeText(tb.textContent);
+        const lineCount = countVisualLines(tb, newText);
+        const maxLines = lineLimits[k] || Infinity;
+
+        if (lineCount >= maxLines) {
+          e.preventDefault();
+          requestAnimationFrame(() => {
+            tb.textContent = values[k] || '';
+            const sel = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(tb);
+            range.collapse(false);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            if (k === 'fhx') alert('Maximum 5 lines reached for Family History');
+          });
+          return;
+        }
+
+        values[k] = newText;
+        handleTextContinuation(tb, newText);
+        handleReverseFlow(tb, e.inputType.includes('delete')); // Only on deletion
         if (docRef) autoSaveValues();
+      };
+
+      tb.addEventListener('beforeinput', handleInput);
+      tb.addEventListener('input', (e) => {
+        if (!('beforeinput' in window)) handleInput(e); // Fallback for browsers without beforeinput
       });
-      tb.addEventListener('blur', () => {
-        const k = tb.dataset.name;
-        if (k) values[k] = tb.innerText;
-        if (docRef) autoSaveValues();
+
+      tb.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && lineLimits[tb.dataset.name]) {
+          const newText = normalizeText(tb.textContent) + '\n';
+          const lineCount = countVisualLines(tb, newText);
+          if (lineCount >= lineLimits[tb.dataset.name]) {
+            e.preventDefault();
+            if (tb.dataset.name === 'fhx') alert('Maximum 5 lines reached for Family History');
+          }
+        }
+      });
+
+      tb.addEventListener('paste', (e) => {
+        if (!lineLimits[tb.dataset.name]) return;
+        const pastedText = (e.clipboardData || window.clipboardData).getData('text');
+        const newText = normalizeText(tb.textContent + pastedText);
+        const lineCount = countVisualLines(tb, newText);
+        if (lineCount >= lineLimits[tb.dataset.name]) {
+          e.preventDefault();
+          handleTextContinuation(tb, normalizeText(tb.textContent));
+          if (tb.dataset.name === 'fhx') alert('Maximum 5 lines reached for Family History');
+        }
       });
 
       pageWrap.appendChild(tb);
@@ -414,38 +769,47 @@
       document.querySelectorAll('.box').forEach(tb => {
         const k = tb.dataset.name || '';
         const next = k ? (values[k] ?? '') : '';
-        if ((tb.innerText || '') !== next) tb.innerText = next;
-        tb.style.fontSize = (values.fontSize ?? 14) + 'px';
-        tb.style.lineHeight = String((values.lineHeight ?? 1.2).toFixed(1));
+        if (normalizeText(tb.textContent) !== next) tb.textContent = next;
+        tb.style.fontSize = (values.fontSize ?? 13) + 'px';
+        tb.style.lineHeight = String((values.lineHeight ?? 1.3).toFixed(1));
       });
     }
 
     // ========= LOAD/PRINT/EXPORT =========
-    function wrapTextBlocks(text) { return text.replace(/\r/g, '').split('\n'); }
-    function wrapLineToWidth(text, font, size, maxWidth) {
+    function wrapTextBlocks(text) { return normalizeText(text).split('\n'); }
+    function wrapLineToWidth(text, font, size, maxWidth, maxLines) {
       const words = text.split(/\s+/), lines = [], W = t => font.widthOfTextAtSize(t, size);
       let line = '';
+      let lineCount = 0;
       for (const w of words) {
         const t = line ? line + ' ' + w : w;
-        if (W(t) <= maxWidth) line = t;
-        else {
-          if (line) lines.push(line);
+        if (W(t) <= maxWidth) {
+          line = t;
+        } else {
+          if (line) {
+            if (lineCount < maxLines) lines.push(line);
+            lineCount++;
+          }
           if (W(w) > maxWidth) {
             let cl = '';
             for (const c of w) {
               const t2 = cl + c;
-              if (W(t2) <= maxWidth) cl = t2;
-              else {
-                if (cl) lines.push(cl);
+              if (W(t2) <= maxWidth) {
+                cl = t2;
+              } else {
+                if (cl && lineCount < maxLines) lines.push(cl);
+                lineCount++;
                 cl = c;
               }
             }
             if (cl) line = cl;
             else line = '';
-          } else line = w;
+          } else {
+            line = w;
+          }
         }
       }
-      if (line) lines.push(line);
+      if (line && lineCount < maxLines) lines.push(line);
       return lines;
     }
 
@@ -462,8 +826,9 @@
             const name = a.name || '';
             const text = (values[name] || '').toString();
             if (!text) continue;
-            const fpt = values.fontSize || a.fpt || 14;
-            const lh = values.lineHeight || a.lh || 1.2;
+            const fpt = values.fontSize || a.fpt || 13;
+            const lh = values.lineHeight || a.lh || 1.3;
+            const maxLines = lineLimits[name] || Infinity;
             const pad = 2;
             const boxW = a.w * width - pad * 2;
             const boxH = a.h * height - pad * 2;
@@ -472,7 +837,7 @@
             const blocks = wrapTextBlocks(text);
             let y = topY - fpt;
             outer: for (const b of blocks) {
-              const lines = wrapLineToWidth(b, font, fpt, boxW);
+              const lines = wrapLineToWidth(b, font, fpt, boxW, maxLines);
               for (const ln of lines) {
                 if ((topY - y) > boxH + fpt * 0.2) break outer;
                 page.drawText(ln, { x: startX, y, size: fpt, font, color: PDFLib.rgb(0, 0, 0) });
@@ -524,7 +889,7 @@
       a.href = URL.createObjectURL(blob);
       a.download = filename;
       a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 8000);
+      setTimeout(() => URL.createObjectURL(a.href), 8000);
     }
 
     async function doExport() {
@@ -589,12 +954,12 @@
       try {
         const snap = await ref.get();
         if (snap.exists) {
-          values = { ...snap.data()?.values, fontSize: snap.data()?.values?.fontSize || 14, lineHeight: snap.data()?.values?.lineHeight || 1.2 };
+          values = { ...snap.data()?.values, fontSize: snap.data()?.values?.fontSize || 13, lineHeight: snap.data()?.values?.lineHeight || 1.3 };
           applyValuesToDom();
           fontSizeSelector.value = values.fontSize;
           lineHeightSelector.value = values.lineHeight;
         } else {
-          values = { fontSize: 14, lineHeight: 1.2 };
+          values = { fontSize: 13, lineHeight: 1.3 };
         }
       } catch (e) {
         console.warn('Failed to load from Firestore:', e.message);
@@ -613,8 +978,8 @@
             <label class="block mb-2 text-sm font-medium">Template Name</label>
             <input id="nameInput" type="text" class="w-full border border-slate-300 p-2 mb-4 rounded-lg">
           ` : `
-            <label class="block mb-2 text-sm font-medium">Age (years)</label>
-            <input id="ageInput" type="number" class="w-full border border-slate-300 p-2 mb-2 rounded-lg">
+            <label class="block mb-2 text-sm font-medium">Age</label>
+            <input id="ageInput" type="text" class="w-full border border-slate-300 p-2 mb-2 rounded-lg">
             <label class="block mb-2 text-sm font-medium">Sex</label>
             <select id="sexSelect" class="w-full border border-slate-300 p-2 mb-2 rounded-lg">
               <option value="M">Male</option><option value="F">Female</option><option value="O">Other</option>
@@ -656,14 +1021,13 @@
           admissionsList.innerHTML = '<p class="text-slate-500">No admissions yet.</p>';
           return;
         }
-        admissionsList.innerHTML = ''; // Clear the list
-        // Sort by updatedAt descending (newest first)
+        admissionsList.innerHTML = '';
         const docs = snap.docs.sort((a, b) => (b.data().updatedAt?.toMillis() || 0) - (a.data().updatedAt?.toMillis() || 0));
         docs.forEach(doc => {
           const data = doc.data();
           const card = document.createElement('div');
           card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
-          card.dataset.docId = doc.id; // Store doc ID for reference
+          card.dataset.docId = doc.id;
           card.innerHTML = `
             <h3 class="font-semibold">${data.displayId || doc.id}</h3>
             <p class="text-xs text-slate-500">Updated: ${data.updatedAt?.toDate().toLocaleString() || 'N/A'}</p>
@@ -673,7 +1037,7 @@
               <button class="btn delete-btn">Delete</button>
             </div>`;
           card.querySelector('.load-btn').onclick = async () => {
-            values = { ...(data.values || {}), fontSize: data.values?.fontSize || 14, lineHeight: data.values?.lineHeight || 1.2 };
+            values = { ...(data.values || {}), fontSize: data.values?.fontSize || 13, lineHeight: data.values?.lineHeight || 1.3 };
             applyValuesToDom();
             fontSizeSelector.value = values.fontSize;
             lineHeightSelector.value = values.lineHeight;
@@ -681,6 +1045,7 @@
             currentAdmissionId = doc.id;
             isNewTemplate = false;
             setEditable(true);
+            viewOverlay.classList.add('hidden');
             docRef = db.collection('admissions').doc(doc.id);
             await loadValuesFromFirestore(docRef);
             window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -691,9 +1056,9 @@
               onCreate: async ({ age, sex, diagnosis }) => {
                 const now = new Date();
                 const stamp = `${String(now.getDate())}-${now.getMonth() + 1}-${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-                const displayId = `${age}y/${sex} ${diagnosis} (${stamp})`;
+                const displayId = `${age}/${sex} ${diagnosis} (${stamp})`;
                 const docId = displayId.replace(/ /g, '_').replace(/\//g, '-').replace(/[\(\)]/g, '');
-                values = { ...(data.values || {}), fontSize: data.values?.fontSize || 14, lineHeight: data.values?.lineHeight || 1.2 };
+                values = { ...(data.values || {}), fontSize: data.values?.fontSize || 13, lineHeight: data.values?.lineHeight || 1.3 };
                 currentAdmissionId = docId;
                 isTemplateMode = false;
                 isNewTemplate = false;
@@ -705,6 +1070,7 @@
                   await saveValuesToFirestore(docRef, displayId, 'admission');
                 }
                 applyValuesToDom();
+                viewOverlay.classList.add('hidden');
                 showSavedBadge('Admission Copy Created');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }
@@ -728,7 +1094,6 @@
       }
     }
 
-    // Debounced version of loadAdmissionsList
     const debouncedLoadAdmissionsList = debounce(loadAdmissionsList, 100);
 
     async function loadTemplatesList() {
@@ -743,8 +1108,7 @@
           templatesList.innerHTML = '<p class="text-slate-500">No templates yet.</p>';
           return;
         }
-        templatesList.innerHTML = ''; // Clear the list
-        // Sort by updatedAt descending (newest first)
+        templatesList.innerHTML = '';
         const docs = snap.docs.sort((a, b) => (b.data().updatedAt?.toMillis() || 0) - (a.data().updatedAt?.toMillis() || 0));
         docs.forEach(doc => {
           const data = doc.data();
@@ -756,6 +1120,7 @@
             <p class="text-xs text-slate-500">Updated: ${data.updatedAt?.toDate().toLocaleString() || 'N/A'}</p>
             <div class="mt-2 flex gap-2">
               <button class="btn btn-primary load-btn">Use Template</button>
+              <button class="btn view-btn">View</button>
               <button class="btn delete-btn">Delete</button>
             </div>`;
           card.querySelector('.load-btn').onclick = () => {
@@ -764,9 +1129,9 @@
               onCreate: async ({ age, sex, diagnosis }) => {
                 const now = new Date();
                 const stamp = `${String(now.getDate())}-${now.getMonth() + 1}-${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-                const displayId = `${age}y/${sex} ${diagnosis} (${stamp})`;
+                const displayId = `${age}/${sex} ${diagnosis} (${stamp})`;
                 const docId = displayId.replace(/ /g, '_').replace(/\//g, '-').replace(/[\(\)]/g, '');
-                values = { ...(data.values || {}), fontSize: data.values?.fontSize || 14, lineHeight: data.values?.lineHeight || 1.2 };
+                values = { ...(data.values || {}), fontSize: data.values?.fontSize || 13, lineHeight: data.values?.lineHeight || 1.3 };
                 currentAdmissionId = docId;
                 isTemplateMode = false;
                 isNewTemplate = false;
@@ -778,10 +1143,24 @@
                   await saveValuesToFirestore(docRef, displayId, 'admission');
                 }
                 applyValuesToDom();
+                viewOverlay.classList.add('hidden');
                 showSavedBadge('Admission Created');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }
             });
+          };
+          card.querySelector('.view-btn').onclick = async () => {
+            values = { ...(data.values || {}), fontSize: data.values?.fontSize || 13, lineHeight: data.values?.lineHeight || 1.3 };
+            currentAdmissionId = doc.id;
+            isTemplateMode = true;
+            isNewTemplate = false;
+            setEditable(false);
+            fontSizeSelector.value = values.fontSize;
+            lineHeightSelector.value = values.lineHeight;
+            docRef = db.collection('admissions').doc(doc.id);
+            await loadValuesFromFirestore(docRef);
+            viewOverlay.classList.remove('hidden');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
           };
           card.querySelector('.delete-btn').onclick = async () => {
             if (doc.id === currentAdmissionId && isTemplateMode) return alert('Load another template/admission first.');
@@ -801,7 +1180,6 @@
       }
     }
 
-    // Debounced version of loadTemplatesList
     const debouncedLoadTemplatesList = debounce(loadTemplatesList, 100);
 
     function copyFormText() {
@@ -815,7 +1193,6 @@
     function setupRealtimeListeners() {
       if (!firebaseInitialized || !db) return;
 
-      // Real-time listener for admissions
       db.collection('admissions')
         .where('type', '==', 'admission')
         .onSnapshot(snapshot => {
@@ -825,10 +1202,8 @@
             if (change.type === 'added' || change.type === 'modified') {
               const doc = change.doc;
               const data = doc.data();
-              // Remove existing card if it exists to prevent duplicates
               const existingCard = admissionsList.querySelector(`[data-doc-id="${doc.id}"]`);
               if (existingCard) existingCard.remove();
-              // Add new card
               const card = document.createElement('div');
               card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
               card.dataset.docId = doc.id;
@@ -841,7 +1216,7 @@
                   <button class="btn delete-btn">Delete</button>
                 </div>`;
               card.querySelector('.load-btn').onclick = async () => {
-                values = { ...(data.values || {}), fontSize: data.values?.fontSize || 14, lineHeight: data.values?.lineHeight || 1.2 };
+                values = { ...(data.values || {}), fontSize: data.values?.fontSize || 13, lineHeight: data.values?.lineHeight || 1.3 };
                 applyValuesToDom();
                 fontSizeSelector.value = values.fontSize;
                 lineHeightSelector.value = values.lineHeight;
@@ -849,6 +1224,7 @@
                 currentAdmissionId = doc.id;
                 isNewTemplate = false;
                 setEditable(true);
+                viewOverlay.classList.add('hidden');
                 docRef = db.collection('admissions').doc(doc.id);
                 await loadValuesFromFirestore(docRef);
                 window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -859,9 +1235,9 @@
                   onCreate: async ({ age, sex, diagnosis }) => {
                     const now = new Date();
                     const stamp = `${String(now.getDate())}-${now.getMonth() + 1}-${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-                    const displayId = `${age}y/${sex} ${diagnosis} (${stamp})`;
+                    const displayId = `${age}/${sex} ${diagnosis} (${stamp})`;
                     const docId = displayId.replace(/ /g, '_').replace(/\//g, '-').replace(/[\(\)]/g, '');
-                    values = { ...(data.values || {}), fontSize: data.values?.fontSize || 14, lineHeight: data.values?.lineHeight || 1.2 };
+                    values = { ...(data.values || {}), fontSize: data.values?.fontSize || 13, lineHeight: data.values?.lineHeight || 1.3 };
                     currentAdmissionId = docId;
                     isTemplateMode = false;
                     isNewTemplate = false;
@@ -873,6 +1249,7 @@
                       await saveValuesToFirestore(docRef, displayId, 'admission');
                     }
                     applyValuesToDom();
+                    viewOverlay.classList.add('hidden');
                     showSavedBadge('Admission Copy Created');
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                   }
@@ -902,7 +1279,6 @@
           admissionsList.innerHTML = '<p class="text-slate-500">Error loading admissions. Please try again.</p>';
         });
 
-      // Real-time listener for templates
       db.collection('admissions')
         .where('type', '==', 'template')
         .onSnapshot(snapshot => {
@@ -912,10 +1288,8 @@
             if (change.type === 'added' || change.type === 'modified') {
               const doc = change.doc;
               const data = doc.data();
-              // Remove existing card if it exists to prevent duplicates
               const existingCard = templatesList.querySelector(`[data-doc-id="${doc.id}"]`);
               if (existingCard) existingCard.remove();
-              // Add new card
               const card = document.createElement('div');
               card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
               card.dataset.docId = doc.id;
@@ -924,6 +1298,7 @@
                 <p class="text-xs text-slate-500">Updated: ${data.updatedAt?.toDate().toLocaleString() || 'N/A'}</p>
                 <div class="mt-2 flex gap-2">
                   <button class="btn btn-primary load-btn">Use Template</button>
+                  <button class="btn view-btn">View</button>
                   <button class="btn delete-btn">Delete</button>
                 </div>`;
               card.querySelector('.load-btn').onclick = () => {
@@ -932,9 +1307,9 @@
                   onCreate: async ({ age, sex, diagnosis }) => {
                     const now = new Date();
                     const stamp = `${String(now.getDate())}-${now.getMonth() + 1}-${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-                    const displayId = `${age}y/${sex} ${diagnosis} (${stamp})`;
+                    const displayId = `${age}/${sex} ${diagnosis} (${stamp})`;
                     const docId = displayId.replace(/ /g, '_').replace(/\//g, '-').replace(/[\(\)]/g, '');
-                    values = { ...(data.values || {}), fontSize: data.values?.fontSize || 14, lineHeight: data.values?.lineHeight || 1.2 };
+                    values = { ...(data.values || {}), fontSize: data.values?.fontSize || 13, lineHeight: data.values?.lineHeight || 1.3 };
                     currentAdmissionId = docId;
                     isTemplateMode = false;
                     isNewTemplate = false;
@@ -946,10 +1321,24 @@
                       await saveValuesToFirestore(docRef, displayId, 'admission');
                     }
                     applyValuesToDom();
+                    viewOverlay.classList.add('hidden');
                     showSavedBadge('Admission Created');
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                   }
                 });
+              };
+              card.querySelector('.view-btn').onclick = async () => {
+                values = { ...(data.values || {}), fontSize: data.values?.fontSize || 13, lineHeight: data.values?.lineHeight || 1.3 };
+                currentAdmissionId = doc.id;
+                isTemplateMode = true;
+                isNewTemplate = false;
+                setEditable(false);
+                fontSizeSelector.value = values.fontSize;
+                lineHeightSelector.value = values.lineHeight;
+                docRef = db.collection('admissions').doc(doc.id);
+                await loadValuesFromFirestore(docRef);
+                viewOverlay.classList.remove('hidden');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
               };
               card.querySelector('.delete-btn').onclick = async () => {
                 if (doc.id === currentAdmissionId && isTemplateMode) return alert('Load another template/admission first.');
@@ -1017,6 +1406,16 @@
         updateLineHeight(e.target.value);
       });
 
+      closeViewBtn.addEventListener('click', () => {
+        clearFormDomAndState();
+        applyValuesToDom();
+        setEditable(false);
+        viewOverlay.classList.add('hidden');
+        isTemplateMode = false;
+        currentAdmissionId = null;
+        docRef = null;
+      });
+
       overlay.classList.add('hidden');
       console.log('Init complete');
     }
@@ -1028,12 +1427,12 @@
         onCreate: async ({ age, sex, diagnosis }) => {
           const now = new Date();
           const stamp = `${String(now.getDate())}-${now.getMonth() + 1}-${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-          const displayId = `${age}y/${sex} ${diagnosis} (${stamp})`;
+          const displayId = `${age}/${sex} ${diagnosis} (${stamp})`;
           const docId = displayId.replace(/ /g, '_').replace(/\//g, '-').replace(/[\(\)]/g, '');
           currentAdmissionId = docId;
           isTemplateMode = false;
           isNewTemplate = false;
-          values = { fontSize: 14, lineHeight: 1.2 };
+          values = { fontSize: 13, lineHeight: 1.3 };
           clearFormDomAndState();
           applyValuesToDom();
           setEditable(true);
@@ -1043,6 +1442,7 @@
             docRef = db.collection('admissions').doc(docId);
             await saveValuesToFirestore(docRef, displayId, 'admission');
           }
+          viewOverlay.classList.add('hidden');
           showSavedBadge('Admission Created');
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }
@@ -1061,7 +1461,7 @@
           currentAdmissionId = docId;
           isTemplateMode = true;
           isNewTemplate = true;
-          values = { fontSize: 14, lineHeight: 1.2 };
+          values = { fontSize: 13, lineHeight: 1.3 };
           clearFormDomAndState();
           applyValuesToDom();
           setEditable(true);
@@ -1071,6 +1471,7 @@
             docRef = db.collection('admissions').doc(docId);
             await saveValuesToFirestore(docRef, displayId, 'template');
           }
+          viewOverlay.classList.add('hidden');
           showSavedBadge('Template Created');
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }
