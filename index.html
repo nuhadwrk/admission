@@ -1,44 +1,4 @@
-
-<script type="text/javascript">
-        var gk_isXlsx = false;
-        var gk_xlsxFileLookup = {};
-        var gk_fileData = {};
-        function filledCell(cell) {
-          return cell !== '' && cell != null;
-        }
-        function loadFileData(filename) {
-        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
-            try {
-                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
-                var firstSheetName = workbook.SheetNames[0];
-                var worksheet = workbook.Sheets[firstSheetName];
-
-                // Convert sheet to JSON to filter blank rows
-                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
-                // Filter out blank rows (rows where all cells are empty, null, or undefined)
-                var filteredData = jsonData.filter(row => row.some(filledCell));
-
-                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
-                var headerRowIndex = filteredData.findIndex((row, index) =>
-                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
-                );
-                // Fallback
-                if (headerRowIndex === -1 || headerRowIndex > 25) {
-                  headerRowIndex = 0;
-                }
-
-                // Convert filtered JSON back to CSV
-                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
-                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
-                return csv;
-            } catch (e) {
-                console.error(e);
-                return "";
-            }
-        }
-        return gk_fileData[filename] || "";
-        }
-        </script><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -71,9 +31,22 @@
       background: #f5f7fa;
       color: #1e293b;
       padding-bottom: 80px; /* Prevents action bar occlusion */
+      padding-top: 20px; /* Add space to prevent top cutoff on desktop */
     }
 
-    #chrome { max-width: 1100px; margin: 0 auto; padding: clamp(8px, 2vw, 16px); }
+    #chrome {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: clamp(8px, 2vw, 16px);
+      transform-origin: top center;
+    }
+
+    /* Apply 80% zoom on desktop */
+    @media (min-width: 640px) {
+      #chrome {
+        transform: scale(0.8);
+      }
+    }
 
     #stage {
       background: #fff;
@@ -158,12 +131,26 @@
     select.btn { padding: 6px 8px; font-size: 14px; }
 
     #saveBadge {
-      position: fixed; bottom: 80px; right: 16px; z-index: 60;
+      position: fixed; top: 16px; right: 16px; z-index: 60;
       font-size: 14px; padding: 6px 12px; border-radius: 12px;
       background: #ecfdf5; color: #065f46; border: 1px solid #d1fae5;
       opacity: 0; transition: opacity .3s ease;
     }
     #saveBadge.visible { opacity: 1; }
+
+    /* Card styling for admissions and templates */
+    .card {
+      width: auto;
+      min-width: 200px;
+      max-width: 100%;
+      overflow-wrap: break-word;
+    }
+    .card h3 {
+      white-space: normal;
+      word-wrap: break-word;
+      max-width: 100%;
+    }
+
     @media (max-width: 640px) {
       #chrome { padding: 8px; }
       #actionBar { left: 8px; right: 8px; bottom: 8px; padding: 6px; border-radius: 8px; flex-wrap: wrap; }
@@ -171,6 +158,7 @@
       #stage { padding: 8px; }
       body { padding-bottom: 200px; }
       #templatesSection { margin-bottom: 100px; }
+      .card { min-width: 100%; } /* Full width on mobile */
     }
     @media print {
       body, #chrome, #stage, .page-sizer, .page, .box, canvas { display: none !important; }
@@ -286,14 +274,6 @@
     let scale = 1;
     const DPR = Math.min(window.devicePixelRatio || 1, 2);
     const canvasCache = new Map(); // Cache for rendered canvases
-    const lineLimits = {
-      complains: 7,
-      hopi: 6,
-      pasthx: 6,
-      personalhx: 6,
-      fhx: 5
-    };
-    const fieldOrder = ['complains', 'hopi', 'pasthx', 'personalhx', 'fhx'];
 
     // ========= HELPERS =========
     function showSavedBadge(msg = 'Saved') {
@@ -330,7 +310,7 @@
 
     function clearFormDomAndState() {
       document.querySelectorAll('.box').forEach(tb => {
-        tb.textContent = '';
+        tb.innerHTML = '';
         if (tb.dataset.name) delete values[tb.dataset.name];
       });
     }
@@ -345,42 +325,14 @@
     }
 
     // Normalize text for contenteditable
-    function normalizeText(text) {
-      return text.replace(/\u00A0/g, ' ').replace(/<br\s*\/?>/gi, '\n').trim();
-    }
-
-    // Count visual lines based on box width and font, with each \n as a new line
-    function countVisualLines(tb, text) {
-      const normalizedText = normalizeText(text);
-      if (!normalizedText) return 0;
-      const boxWidth = getBoxWidth(tb);
-      const fontSize = parseInt(getComputedStyle(tb).fontSize) || values.fontSize;
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      ctx.font = `${fontSize}px Helvetica`;
-      let totalLines = 0;
-      const segments = normalizedText.split('\n');
-      for (const segment of segments) {
-        if (!segment.trim()) {
-          totalLines += 1; // Empty line counts as one visual line
-          continue;
-        }
-        let currentLineWidth = 0;
-        const words = segment.split(' ').filter(w => w);
-        let lineCount = 1; // Start with 1 line per non-empty segment
-        for (const word of words) {
-          const wordWidth = ctx.measureText(word + ' ').width;
-          if (currentLineWidth + wordWidth > boxWidth) {
-            lineCount++;
-            currentLineWidth = wordWidth;
-          } else {
-            currentLineWidth += wordWidth;
-          }
-        }
-        totalLines += lineCount;
-      }
-      console.log(`countVisualLines: field=${tb.dataset.name}, text="${normalizedText.slice(0, 20)}...", boxWidth=${boxWidth}, fontSize=${fontSize}, lines=${totalLines}`);
-      return totalLines;
+    function normalizeText(tb) {
+      let html = tb.innerHTML;
+      return html
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<div[^>]*>(.*?)<\/div>/gi, '\n$1')
+        .replace(/<p[^>]*>(.*?)<\/p>/gi, '\n$1')
+        .replace(/<[^>]+>/g, '')
+        .replace(/\u00A0/g, ' ');
     }
 
     // Get box width for a text box, accounting for padding and scale
@@ -394,188 +346,6 @@
         return snap(anchor.w * baseW * scale) - padding;
       }
       return parseFloat(styles.width) - padding;
-    }
-
-    // Handle text continuation to next field
-    function handleTextContinuation(tb, text) {
-      const name = tb.dataset.name;
-      if (!name || !lineLimits[name]) return;
-      const maxLines = lineLimits[name];
-      const fontSize = parseInt(getComputedStyle(tb).fontSize) || values.fontSize;
-      const boxWidth = getBoxWidth(tb);
-      const lineCount = countVisualLines(tb, text);
-
-      if (lineCount > maxLines) {
-        console.log(`handleTextContinuation: ${name} exceeds ${maxLines} lines (${lineCount})`);
-        const segments = normalizeText(text).split('\n');
-        let currentLines = 0;
-        let keepText = [];
-        let excessText = [];
-        let currentLineWidth = 0;
-        const ctx = tb.ownerDocument.createElement('canvas').getContext('2d');
-        ctx.font = `${fontSize}px Helvetica`;
-
-        // Process each segment to fit within maxLines
-        for (const segment of segments) {
-          if (currentLines >= maxLines) {
-            excessText.push(segment);
-            continue;
-          }
-          const words = segment.split(' ').filter(w => w);
-          let lineWords = [];
-          let segmentLines = segment.trim() ? 1 : 1;
-          for (const word of words) {
-            const wordWidth = ctx.measureText(word + ' ').width;
-            if (currentLineWidth + wordWidth > boxWidth) {
-              segmentLines++;
-              if (currentLines + segmentLines <= maxLines) {
-                keepText.push(lineWords.join(' '));
-                lineWords = [word];
-                currentLineWidth = wordWidth;
-              } else {
-                lineWords.push(word);
-                excessText.push(lineWords.join(' '));
-                lineWords = [];
-                currentLineWidth = 0;
-              }
-            } else {
-              lineWords.push(word);
-              currentLineWidth += wordWidth;
-            }
-          }
-          if (lineWords.length) {
-            if (currentLines + segmentLines <= maxLines) {
-              keepText.push(lineWords.join(' '));
-            } else {
-              excessText.push(lineWords.join(' '));
-            }
-          }
-          currentLines += segmentLines;
-          currentLineWidth = 0;
-        }
-
-        // Update current field
-        const newText = keepText.join('\n').trim();
-        requestAnimationFrame(() => {
-          const sel = window.getSelection();
-          const range = sel.rangeCount ? sel.getRangeAt(0) : null;
-          tb.textContent = newText || '';
-          values[name] = newText;
-          if (range && tb.contains(range.startContainer)) {
-            const newRange = document.createRange();
-            newRange.selectNodeContents(tb);
-            newRange.collapse(false);
-            sel.removeAllRanges();
-            sel.addRange(newRange);
-          }
-          console.log(`Updated ${name}: "${newText.slice(0, 20)}..."`);
-
-          // Move excess to next field or truncate for fhx
-          const nextFieldIdx = fieldOrder.indexOf(name) + 1;
-          if (nextFieldIdx < fieldOrder.length) {
-            const nextFieldName = fieldOrder[nextFieldIdx];
-            const nextBox = document.querySelector(`.box[data-name="${nextFieldName}"]`);
-            if (nextBox) {
-              const existingText = normalizeText(nextBox.textContent).trim();
-              const updatedText = (existingText ? existingText + '\n' : '') + excessText.join('\n').trim();
-              nextBox.textContent = updatedText;
-              values[nextFieldName] = updatedText;
-              console.log(`Moved excess to ${nextFieldName}: "${excessText.join('\n').slice(0, 20)}..."`);
-              handleTextContinuation(nextBox, updatedText); // Cascade
-            }
-          } else if (name === 'fhx') {
-            console.log('fhx truncated at 5 lines');
-            alert('Maximum 5 lines reached for Family History');
-          }
-        });
-
-        if (docRef) autoSaveValues();
-      }
-    }
-
-    // Handle reverse flow on deletion
-    function handleReverseFlow(tb, isDeletion) {
-      if (!isDeletion) return; // Only run on deletion
-      const name = tb.dataset.name;
-      const idx = fieldOrder.indexOf(name);
-      if (idx >= fieldOrder.length - 1) return;
-
-      const nextName = fieldOrder[idx + 1];
-      const nextBox = document.querySelector(`.box[data-name="${nextName}"]`);
-      if (!nextBox || !normalizeText(nextBox.textContent).trim()) return;
-
-      const boxWidth = getBoxWidth(tb);
-      const fontSize = parseInt(getComputedStyle(tb).fontSize) || values.fontSize;
-      const lineCount = countVisualLines(tb, normalizeText(tb.textContent));
-      const maxLines = lineLimits[name];
-
-      if (lineCount < maxLines) {
-        console.log(`handleReverseFlow: Pulling text to ${name} (current: ${lineCount}/${maxLines})`);
-        const neededLines = maxLines - lineCount;
-        const nextSegments = normalizeText(nextBox.textContent).split('\n');
-        let pullText = [];
-        let keepText = [];
-        let currentLines = 0;
-        let currentLineWidth = 0;
-        const ctx = tb.ownerDocument.createElement('canvas').getContext('2d');
-        ctx.font = `${fontSize}px Helvetica`;
-
-        for (const segment of nextSegments) {
-          if (currentLines >= neededLines) {
-            keepText.push(segment);
-            continue;
-          }
-          const words = segment.split(' ').filter(w => w);
-          let lineWords = [];
-          let segmentLines = segment.trim() ? 1 : 1;
-          for (const word of words) {
-            const wordWidth = ctx.measureText(word + ' ').width;
-            if (currentLineWidth + wordWidth > boxWidth) {
-              segmentLines++;
-              if (currentLines + segmentLines <= neededLines) {
-                pullText.push(lineWords.join(' '));
-                lineWords = [word];
-                currentLineWidth = wordWidth;
-              } else {
-                lineWords.push(word);
-                keepText.push(lineWords.join(' '));
-                lineWords = [];
-                currentLineWidth = 0;
-              }
-            } else {
-              lineWords.push(word);
-              currentLineWidth += wordWidth;
-            }
-          }
-          if (lineWords.length) {
-            if (currentLines + segmentLines <= neededLines) {
-              pullText.push(lineWords.join(' '));
-            } else {
-              keepText.push(lineWords.join(' '));
-            }
-          }
-          currentLines += segmentLines;
-          currentLineWidth = 0;
-        }
-
-        requestAnimationFrame(() => {
-          const sel = window.getSelection();
-          const range = sel.rangeCount ? sel.getRangeAt(0) : null;
-          tb.textContent = (normalizeText(tb.textContent) ? normalizeText(tb.textContent) + '\n' : '') + pullText.join('\n');
-          values[name] = normalizeText(tb.textContent);
-          nextBox.textContent = keepText.join('\n').trim();
-          values[nextName] = normalizeText(nextBox.textContent);
-          if (range && tb.contains(range.startContainer)) {
-            const newRange = document.createRange();
-            newRange.selectNodeContents(tb);
-            newRange.collapse(false);
-            sel.removeAllRanges();
-            sel.addRange(newRange);
-          }
-          console.log(`Pulled text to ${name}: "${pullText.join('\n').slice(0, 20)}..."`);
-          if (docRef) autoSaveValues();
-        });
-      }
     }
 
     // ========= INITIALIZE FIREBASE =========
@@ -651,7 +421,7 @@
     function setScale() {
       const padX = 16;
       const avail = Math.max(stage.clientWidth - padX, 280);
-      scale = Math.round(avail / baseW * 100) / 100; // Round to avoid fractional scaling
+      scale = Math.round(avail / baseW * 100) / 100; // Responsive scaling, no cap
       document.querySelectorAll('.page-sizer').forEach(sizer => {
         sizer.style.setProperty('--w', (baseW * scale) + 'px');
         sizer.style.setProperty('--h', (baseH * scale) + 'px');
@@ -702,62 +472,32 @@
       tb.style.width = width + 'px';
       tb.style.height = height + 'px';
 
-      tb.textContent = values[a.name || ''] || '';
+      tb.innerHTML = (values[a.name || ''] || '').replace(/\n/g, '<br>');
 
       const handleInput = (e) => {
         const k = tb.dataset.name;
         if (!k) return;
-
-        const newText = normalizeText(tb.textContent);
-        const lineCount = countVisualLines(tb, newText);
-        const maxLines = lineLimits[k] || Infinity;
-
-        if (lineCount >= maxLines) {
-          e.preventDefault();
-          requestAnimationFrame(() => {
-            tb.textContent = values[k] || '';
-            const sel = window.getSelection();
-            const range = document.createRange();
-            range.selectNodeContents(tb);
-            range.collapse(false);
-            sel.removeAllRanges();
-            sel.addRange(range);
-            if (k === 'fhx') alert('Maximum 5 lines reached for Family History');
-          });
-          return;
-        }
-
-        values[k] = newText;
-        handleTextContinuation(tb, newText);
-        handleReverseFlow(tb, e.inputType.includes('delete')); // Only on deletion
+        values[k] = normalizeText(tb);
         if (docRef) autoSaveValues();
       };
 
-      tb.addEventListener('beforeinput', handleInput);
-      tb.addEventListener('input', (e) => {
-        if (!('beforeinput' in window)) handleInput(e); // Fallback for browsers without beforeinput
-      });
+      tb.addEventListener('input', handleInput);
 
-      tb.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && lineLimits[tb.dataset.name]) {
-          const newText = normalizeText(tb.textContent) + '\n';
-          const lineCount = countVisualLines(tb, newText);
-          if (lineCount >= lineLimits[tb.dataset.name]) {
-            e.preventDefault();
-            if (tb.dataset.name === 'fhx') alert('Maximum 5 lines reached for Family History');
-          }
-        }
-      });
-
-      tb.addEventListener('paste', (e) => {
-        if (!lineLimits[tb.dataset.name]) return;
-        const pastedText = (e.clipboardData || window.clipboardData).getData('text');
-        const newText = normalizeText(tb.textContent + pastedText);
-        const lineCount = countVisualLines(tb, newText);
-        if (lineCount >= lineLimits[tb.dataset.name]) {
+      tb.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && tb.contentEditable === 'true') {
           e.preventDefault();
-          handleTextContinuation(tb, normalizeText(tb.textContent));
-          if (tb.dataset.name === 'fhx') alert('Maximum 5 lines reached for Family History');
+          const sel = window.getSelection();
+          if (sel.rangeCount > 0) {
+            const range = sel.getRangeAt(0);
+            range.deleteContents();
+            const br = document.createElement('br');
+            range.insertNode(br);
+            range.setStartAfter(br);
+            range.setEndAfter(br);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            tb.dispatchEvent(new Event('input', { bubbles: true }));
+          }
         }
       });
 
@@ -769,27 +509,26 @@
       document.querySelectorAll('.box').forEach(tb => {
         const k = tb.dataset.name || '';
         const next = k ? (values[k] ?? '') : '';
-        if (normalizeText(tb.textContent) !== next) tb.textContent = next;
+        const displayText = next;
+        tb.innerHTML = displayText.replace(/\n/g, '<br>');
         tb.style.fontSize = (values.fontSize ?? 13) + 'px';
         tb.style.lineHeight = String((values.lineHeight ?? 1.3).toFixed(1));
       });
     }
 
     // ========= LOAD/PRINT/EXPORT =========
-    function wrapTextBlocks(text) { return normalizeText(text).split('\n'); }
-    function wrapLineToWidth(text, font, size, maxWidth, maxLines) {
+    function wrapTextBlocks(text) { 
+      return text.split('\n').map(line => line.trim() === '' ? '' : line); 
+    }
+    function wrapLineToWidth(text, font, size, maxWidth) {
       const words = text.split(/\s+/), lines = [], W = t => font.widthOfTextAtSize(t, size);
       let line = '';
-      let lineCount = 0;
       for (const w of words) {
         const t = line ? line + ' ' + w : w;
         if (W(t) <= maxWidth) {
           line = t;
         } else {
-          if (line) {
-            if (lineCount < maxLines) lines.push(line);
-            lineCount++;
-          }
+          if (line) lines.push(line);
           if (W(w) > maxWidth) {
             let cl = '';
             for (const c of w) {
@@ -797,8 +536,7 @@
               if (W(t2) <= maxWidth) {
                 cl = t2;
               } else {
-                if (cl && lineCount < maxLines) lines.push(cl);
-                lineCount++;
+                if (cl) lines.push(cl);
                 cl = c;
               }
             }
@@ -809,7 +547,7 @@
           }
         }
       }
-      if (line && lineCount < maxLines) lines.push(line);
+      if (line) lines.push(line);
       return lines;
     }
 
@@ -825,10 +563,9 @@
           for (const a of (anchorsByPage[p] || [])) {
             const name = a.name || '';
             const text = (values[name] || '').toString();
-            if (!text) continue;
+            if (!text && text !== '') continue; // Skip if text is undefined/null, but process empty strings
             const fpt = values.fontSize || a.fpt || 13;
             const lh = values.lineHeight || a.lh || 1.3;
-            const maxLines = lineLimits[name] || Infinity;
             const pad = 2;
             const boxW = a.w * width - pad * 2;
             const boxH = a.h * height - pad * 2;
@@ -836,14 +573,20 @@
             const topY = height - a.y * height - pad;
             const blocks = wrapTextBlocks(text);
             let y = topY - fpt;
-            outer: for (const b of blocks) {
-              const lines = wrapLineToWidth(b, font, fpt, boxW, maxLines);
+            for (const b of blocks) {
+              if (b === '') {
+                // Handle empty line by advancing y position
+                if ((topY - y) <= boxH + fpt * 0.2) {
+                  y -= fpt * lh;
+                }
+                continue;
+              }
+              const lines = wrapLineToWidth(b, font, fpt, boxW);
               for (const ln of lines) {
-                if ((topY - y) > boxH + fpt * 0.2) break outer;
+                if ((topY - y) > boxH + fpt * 0.2) break;
                 page.drawText(ln, { x: startX, y, size: fpt, font, color: PDFLib.rgb(0, 0, 0) });
                 y -= fpt * lh;
               }
-              y -= fpt * (lh - 1);
             }
           }
         }
@@ -889,7 +632,7 @@
       a.href = URL.createObjectURL(blob);
       a.download = filename;
       a.click();
-      setTimeout(() => URL.createObjectURL(a.href), 8000);
+      setTimeout(() => URL.revokeObjectURL(a.href), 8000);
     }
 
     async function doExport() {
@@ -979,10 +722,17 @@
             <input id="nameInput" type="text" class="w-full border border-slate-300 p-2 mb-4 rounded-lg">
           ` : `
             <label class="block mb-2 text-sm font-medium">Age</label>
-            <input id="ageInput" type="text" class="w-full border border-slate-300 p-2 mb-2 rounded-lg">
+            <div class="flex gap-2 mb-2">
+              <input id="ageNumber" type="number" min="0" class="w-1/2 border border-slate-300 p-2 rounded-lg">
+              <select id="ageUnit" class="w-1/2 border border-slate-300 p-2 rounded-lg">
+                <option value="y">Years</option>
+                <option value="m">Months</option>
+              </select>
+            </div>
             <label class="block mb-2 text-sm font-medium">Sex</label>
             <select id="sexSelect" class="w-full border border-slate-300 p-2 mb-2 rounded-lg">
-              <option value="M">Male</option><option value="F">Female</option><option value="O">Other</option>
+              <option value="M">Male</option>
+              <option value="F">Female</option>
             </select>
             <label class="block mb-2 text-sm font-medium">Diagnosis</label>
             <input id="diagInput" type="text" class="w-full border border-slate-300 p-2 mb-4 rounded-lg">
@@ -998,11 +748,12 @@
           if (!name) return alert('Template name is required.');
           await onCreate({ name });
         } else {
-          const age = modal.querySelector('#ageInput').value.trim();
+          const ageNumber = modal.querySelector('#ageNumber').value.trim();
+          const ageUnit = modal.querySelector('#ageUnit').value;
           const sex = modal.querySelector('#sexSelect').value;
           const diagnosis = modal.querySelector('#diagInput').value.trim().toUpperCase();
-          if (!age || !sex || !diagnosis) return alert('All fields are required.');
-          await onCreate({ age, sex, diagnosis });
+          if (!ageNumber || !sex || !diagnosis) return alert('All fields are required.');
+          await onCreate({ ageNumber, ageUnit, sex, diagnosis });
         }
         modal.remove();
       };
@@ -1026,7 +777,7 @@
         docs.forEach(doc => {
           const data = doc.data();
           const card = document.createElement('div');
-          card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
+          card.className = 'card bg-white p-4 rounded-lg shadow border border-slate-200';
           card.dataset.docId = doc.id;
           card.innerHTML = `
             <h3 class="font-semibold">${data.displayId || doc.id}</h3>
@@ -1053,11 +804,11 @@
           card.querySelector('.copy-btn').onclick = () => {
             openEntryModal({
               title: 'New Admission (Copy)',
-              onCreate: async ({ age, sex, diagnosis }) => {
+              onCreate: async ({ ageNumber, ageUnit, sex, diagnosis }) => {
                 const now = new Date();
-                const stamp = `${String(now.getDate())}-${now.getMonth() + 1}-${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-                const displayId = `${age}/${sex} ${diagnosis} (${stamp})`;
-                const docId = displayId.replace(/ /g, '_').replace(/\//g, '-').replace(/[\(\)]/g, '');
+                const stamp = `${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                const displayId = `${ageNumber}${ageUnit}/${sex}, ${diagnosis} (${stamp})`;
+                const docId = displayId.replace(/\//g, '-').replace(/[\(\)]/g, '');
                 values = { ...(data.values || {}), fontSize: data.values?.fontSize || 13, lineHeight: data.values?.lineHeight || 1.3 };
                 currentAdmissionId = docId;
                 isTemplateMode = false;
@@ -1113,7 +864,7 @@
         docs.forEach(doc => {
           const data = doc.data();
           const card = document.createElement('div');
-          card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
+          card.className = 'card bg-white p-4 rounded-lg shadow border border-slate-200';
           card.dataset.docId = doc.id;
           card.innerHTML = `
             <h3 class="font-semibold">${data.displayId || doc.id}</h3>
@@ -1126,11 +877,11 @@
           card.querySelector('.load-btn').onclick = () => {
             openEntryModal({
               title: 'New Admission (From Template)',
-              onCreate: async ({ age, sex, diagnosis }) => {
+              onCreate: async ({ ageNumber, ageUnit, sex, diagnosis }) => {
                 const now = new Date();
-                const stamp = `${String(now.getDate())}-${now.getMonth() + 1}-${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-                const displayId = `${age}/${sex} ${diagnosis} (${stamp})`;
-                const docId = displayId.replace(/ /g, '_').replace(/\//g, '-').replace(/[\(\)]/g, '');
+                const stamp = `${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                const displayId = `${ageNumber}${ageUnit}/${sex}, ${diagnosis} (${stamp})`;
+                const docId = displayId.replace(/\//g, '-').replace(/[\(\)]/g, '');
                 values = { ...(data.values || {}), fontSize: data.values?.fontSize || 13, lineHeight: data.values?.lineHeight || 1.3 };
                 currentAdmissionId = docId;
                 isTemplateMode = false;
@@ -1205,7 +956,7 @@
               const existingCard = admissionsList.querySelector(`[data-doc-id="${doc.id}"]`);
               if (existingCard) existingCard.remove();
               const card = document.createElement('div');
-              card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
+              card.className = 'card bg-white p-4 rounded-lg shadow border border-slate-200';
               card.dataset.docId = doc.id;
               card.innerHTML = `
                 <h3 class="font-semibold">${data.displayId || doc.id}</h3>
@@ -1232,11 +983,11 @@
               card.querySelector('.copy-btn').onclick = () => {
                 openEntryModal({
                   title: 'New Admission (Copy)',
-                  onCreate: async ({ age, sex, diagnosis }) => {
+                  onCreate: async ({ ageNumber, ageUnit, sex, diagnosis }) => {
                     const now = new Date();
-                    const stamp = `${String(now.getDate())}-${now.getMonth() + 1}-${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-                    const displayId = `${age}/${sex} ${diagnosis} (${stamp})`;
-                    const docId = displayId.replace(/ /g, '_').replace(/\//g, '-').replace(/[\(\)]/g, '');
+                    const stamp = `${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                    const displayId = `${ageNumber}${ageUnit}/${sex}, ${diagnosis} (${stamp})`;
+                    const docId = displayId.replace(/\//g, '-').replace(/[\(\)]/g, '');
                     values = { ...(data.values || {}), fontSize: data.values?.fontSize || 13, lineHeight: data.values?.lineHeight || 1.3 };
                     currentAdmissionId = docId;
                     isTemplateMode = false;
@@ -1291,7 +1042,7 @@
               const existingCard = templatesList.querySelector(`[data-doc-id="${doc.id}"]`);
               if (existingCard) existingCard.remove();
               const card = document.createElement('div');
-              card.className = 'bg-white p-4 rounded-lg shadow border border-slate-200';
+              card.className = 'card bg-white p-4 rounded-lg shadow border border-slate-200';
               card.dataset.docId = doc.id;
               card.innerHTML = `
                 <h3 class="font-semibold">${data.displayId || doc.id}</h3>
@@ -1304,11 +1055,11 @@
               card.querySelector('.load-btn').onclick = () => {
                 openEntryModal({
                   title: 'New Admission (From Template)',
-                  onCreate: async ({ age, sex, diagnosis }) => {
+                  onCreate: async ({ ageNumber, ageUnit, sex, diagnosis }) => {
                     const now = new Date();
-                    const stamp = `${String(now.getDate())}-${now.getMonth() + 1}-${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-                    const displayId = `${age}/${sex} ${diagnosis} (${stamp})`;
-                    const docId = displayId.replace(/ /g, '_').replace(/\//g, '-').replace(/[\(\)]/g, '');
+                    const stamp = `${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                    const displayId = `${ageNumber}${ageUnit}/${sex}, ${diagnosis} (${stamp})`;
+                    const docId = displayId.replace(/\//g, '-').replace(/[\(\)]/g, '');
                     values = { ...(data.values || {}), fontSize: data.values?.fontSize || 13, lineHeight: data.values?.lineHeight || 1.3 };
                     currentAdmissionId = docId;
                     isTemplateMode = false;
@@ -1424,11 +1175,11 @@
     newAdmissionBtn.onclick = () => {
       openEntryModal({
         title: 'New Admission',
-        onCreate: async ({ age, sex, diagnosis }) => {
+        onCreate: async ({ ageNumber, ageUnit, sex, diagnosis }) => {
           const now = new Date();
-          const stamp = `${String(now.getDate())}-${now.getMonth() + 1}-${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-          const displayId = `${age}/${sex} ${diagnosis} (${stamp})`;
-          const docId = displayId.replace(/ /g, '_').replace(/\//g, '-').replace(/[\(\)]/g, '');
+          const stamp = `${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+          const displayId = `${ageNumber}${ageUnit}/${sex}, ${diagnosis} (${stamp})`;
+          const docId = displayId.replace(/\//g, '-').replace(/[\(\)]/g, '');
           currentAdmissionId = docId;
           isTemplateMode = false;
           isNewTemplate = false;
@@ -1455,9 +1206,9 @@
         isTemplate: true,
         onCreate: async ({ name }) => {
           const now = new Date();
-          const stamp = `${String(now.getDate())}-${now.getMonth() + 1}-${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+          const stamp = `${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
           const displayId = `${name} (${stamp})`;
-          const docId = displayId.replace(/ /g, '_').replace(/\//g, '-').replace(/[\(\)]/g, '');
+          const docId = displayId.replace(/\//g, '-').replace(/[\(\)]/g, '');
           currentAdmissionId = docId;
           isTemplateMode = true;
           isNewTemplate = true;
